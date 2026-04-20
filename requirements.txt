@@ -1,0 +1,6 @@
+requests
+python-dotenv
+html2text
+ddgs
+atproto
+nostr-sdk
