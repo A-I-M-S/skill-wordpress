@@ -1,5 +1,5 @@
 ---
-name: skill-wordpress 
+name: skill-wordpress  
 description: "Automated SEO autoblogging and multi-platform distribution system. Use when generating long-form SEO content, publishing to WordPress, distributing content across platforms like LinkedIn, Threads, Facebook, Telegram, Discord, Bluesky, Hashnode, WordPress.com, and Nostr, and triggering IndexNow indexing."
 ---
 
@@ -32,6 +32,17 @@ cd <repo>
 pip install -r requirements.txt  
 cp .env.sample .env  
 
+## Initialisation
+
+Before running the main pipeline, fetch WordPress categories:
+
+python3 wordpress-fetch-categories.py  
+
+This generates:
+- wordpress-categories.json  
+
+This file is required for category selection during content publishing.
+
 ## Running
 
 python3 wordpress-automation.py 1  
@@ -61,4 +72,6 @@ Modes:
 ## Notes
 
 - Designed for automation and scale  
-- External APIs may change behavior
+- External APIs may change behavior  
+- Ensure wordpress-categories.json exists before running  
+- Refresh categories periodically if WordPress categories change
