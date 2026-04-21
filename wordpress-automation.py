@@ -123,7 +123,7 @@ def post_to_discord(a):
     except Exception as e: print(f"[ERROR] Discord failed: {e}")
 
 def post_to_bluesky(a, b, c):
-    try: d = Client(); d.login(login=o.getenv("BLUESKY_USER"),password=o.getenv("BLUESKY_PASS")); d.send_post(text=a[:300], embed={"$type":"app.bsky.embed.external","external":{"uri":b,"title":a[:50],"description":"Read more","thumb":d.upload_blob(r.get(c).content).blob}})
+    try: d = Client(); d.login(login=o.getenv("BLUESKY_USER"), password=o.getenv("BLUESKY_PASS")); d.send_post(text=a[:300], embed={"$type":"app.bsky.embed.external","external":{"uri":b,"title":a[:50],"description":"Read more","thumb":d.upload_blob(r.get(c).content).blob}})
     except Exception as e: print(f"[ERROR] Bluesky failed: {e}")
 
 def post_to_dev(a, b, c):
