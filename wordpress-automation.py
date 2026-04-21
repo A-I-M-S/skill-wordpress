@@ -29,55 +29,51 @@ def search_trending_topic(a):
     print(f"[INFO] Using topic: {t}")
     return t
 
-def universal_query(a):
-    print(f"[INFO] Generation attempt")
+def universal_query(topic):
+    print("[INFO] Attempting Google Gemini...")
+
+    GOOGLE_API_KEY = o.getenv("GOOGLE_API_KEY")
+    GOOGLE_MODEL = "gemini-3.1-flash-lite-preview"
+    GOOGLE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GOOGLE_MODEL}:generateContent?key={GOOGLE_API_KEY}"
+
     system_prompt = """You are an expert SEO blog writer. You are an API that returns ONLY valid JSON.
-        STRICT RULES:
-        - Output ONLY JSON
-        - No explanations
-        - No markdown
-        - No text before or after JSON
-        - No code fences
-        """
+STRICT RULES:
+- Output ONLY JSON
+- No explanations
+- No markdown
+- No text before or after JSON
+- No code fences
+"""
     user_msg = f"""
-        Write a high-quality, SEO-optimized blog post about "{a}".
-        Requirements:
-        - Write a compelling, click-worthy title
-        - Include a clear introduction, structured sections (H2/H3), and conclusion
-        - Use bullet points and lists where helpful
-        - Add a FAQ section at the end
-        - Avoid generic or repetitive content
-        - Provide useful insights, examples, or comparisons
-        SEO:
-        - Naturally include keyword variations
-        - Optimize for readability and search intent
-        Output STRICT valid JSON only with this schema:
-        {{"title": "SEO optimized title","excerpt": "under 160 characters","tags": ["tag1","tag2","tag3"],"content": "HTML article at least 1200 words"}}
+Write a high-quality, SEO-optimized blog post about "{topic}".
 
-        Do not include markdown, explanations, or code fences.
-        """
-    if sys.argv[1] == "3":
-        payload = {"contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_msg}"}]}], "generationConfig": {"response_mime_type": "application/json"}}
-        d = r.post(API_ADDR, json=payload, timeout=600)
-    else:
-        payload = {"model": API_MODEL, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]}
-        payload["response_format"] = {"type": "json_object"}
-        d = r.post(f"{API_ADDR}/chat/completions", headers={"Authorization": f"Bearer {API_KEY}"}, json=payload, timeout=600)
-    
-    print("[DEBUG STATUS]", d.status_code)
-    print("[DEBUG RESPONSE]", d.text[:1000])
-    res = d.json()
+Requirements:
+- Write a compelling, click-worthy title
+- Include structured sections (H2/H3), intro, conclusion
+- Add FAQ section
+- At least 1200 words
+- Output STRICT JSON
 
-    if 'choices' in res:
-        return res['choices'][0]['message']['content']
+Schema:
+{{"title":"...","excerpt":"under 160 chars","tags":["tag1","tag2","tag3"],"content":"HTML article"}}
+"""
+    try:
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
+            "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json", "maxOutputTokens": 16384}
+        }
+        res = r.post(GOOGLE_URL, json=payload, timeout=120)
+        if res.status_code == 200: return res.json()['candidates'][0]['content']['parts'][0]['text']
+    except Exception as e:
+        print(f"[ERROR] Fallback & Google exception: {e}")
+    payload = {"model": API_MODEL, "messages": [{"role": "system", "content": system_prompt},{"role": "user", "content": user_msg}], "response_format": {"type": "json_object"}}
+    res = r.post(f"{API_ADDR}/chat/completions", headers={"Authorization": f"Bearer {API_KEY}"}, json=payload, timeout=600)
+    data = res.json()
+    if 'choices' in data: return data['choices'][0]['message']['content']
+    raise ValueError("Both Google and fallback failed")
 
-    if 'candidates' in res:
-        return res['candidates'][0]['content']['parts'][0]['text']
-
-    print("[ERROR] Unexpected API response:", res)
-    raise ValueError("Invalid API response format")
-
-def query_trinity(a):
+def query_LLM(a):
     b = universal_query(a).strip()
     if b.startswith("```"): b = "\n".join(b.split("\n")[1:-1])
     try: return json.loads(b)
@@ -149,7 +145,7 @@ def post_to_wordpress_com(a, b):
 
 def main():
     with open(CATEGORY_FILE, "r", encoding="utf-8") as f: b = json.load(f)
-    c = random.choice(b); post_data=query_trinity(search_trending_topic(c["name"])); category_id=c["id"]; title = post_data['title']
+    c = random.choice(b); post_data=query_LLM(search_trending_topic(c["name"])); category_id=c["id"]; title = post_data['title']
     media_id = random.choice(range(int(o.getenv("MEDIA_RANGE_START")), int(o.getenv("MEDIA_RANGE_END"))))
     image_url = r.get(f"https://{WP_HOST}/wp-json/wp/v2/media/{media_id}", auth=HTTPBasicAuth(WP_USER, WP_PW)).json().get("source_url")
     d = r.post(f"https://{WP_HOST}/wp-json/wp/v2/posts", auth=HTTPBasicAuth(WP_USER, WP_PW), headers={"Content-Type": "application/json"}, data=json.dumps({"title": title, "content": post_data["content"], "excerpt": post_data.get("excerpt", ""), "status": "publish", "categories": [category_id], "tags": get_tag_ids(post_data.get("tags", [])), "featured_media": media_id}))
