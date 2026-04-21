@@ -59,12 +59,23 @@ def universal_query(a):
     if sys.argv[1] == "3":
         payload = {"contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_msg}"}]}], "generationConfig": {"response_mime_type": "application/json"}}
         d = r.post(API_ADDR, json=payload, timeout=600)
-        return d.json()['candidates'][0]['content']['parts'][0]['text']
     else:
         payload = {"model": API_MODEL, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]}
         payload["response_format"] = {"type": "json_object"}
         d = r.post(f"{API_ADDR}/chat/completions", headers={"Authorization": f"Bearer {API_KEY}"}, json=payload, timeout=600)
-        return d.json()['choices'][0]['message']['content']
+    
+    print("[DEBUG STATUS]", d.status_code)
+    print("[DEBUG RESPONSE]", d.text[:1000])
+    res = d.json()
+
+    if 'choices' in res:
+        return res['choices'][0]['message']['content']
+
+    if 'candidates' in res:
+        return res['candidates'][0]['content']['parts'][0]['text']
+
+    print("[ERROR] Unexpected API response:", res)
+    raise ValueError("Invalid API response format")
 
 def query_trinity(a):
     b = universal_query(a).strip()
@@ -112,7 +123,7 @@ def post_to_discord(a):
     except Exception as e: print(f"[ERROR] Discord failed: {e}")
 
 def post_to_bluesky(a, b, c):
-    try: d = Client(); d.login(o.getenv("BLUESKY_USER"), o.getenv("BLUESKY_PASS")); d.send_post(text=a[:300], embed={"$type":"app.bsky.embed.external","external":{"uri":b,"title":a[:50],"description":"Read more","thumb":d.upload_blob(r.get(c).content).blob}})
+    try: d = Client(); d.login(login=o.getenv("BLUESKY_USER"),password=o.getenv("BLUESKY_PASS")); d.send_post(text=a[:300], embed={"$type":"app.bsky.embed.external","external":{"uri":b,"title":a[:50],"description":"Read more","thumb":d.upload_blob(r.get(c).content).blob}})
     except Exception as e: print(f"[ERROR] Bluesky failed: {e}")
 
 def post_to_dev(a, b, c):
