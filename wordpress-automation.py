@@ -1,23 +1,12 @@
-from atproto import Client
+from atproto import Client as BC
 from ddgs import DDGS
 from dotenv import load_dotenv
-from nostr_sdk import *
+from nostr_sdk import Client, NostrSigner, Keys, RelayUrl, EventBuilder
 from pathlib import Path
 from requests.auth import HTTPBasicAuth
-import asyncio
-import html2text
-import json
-import random
-import os as o
-import re
-import requests as r
-import sys
-import time
+import asyncio, html2text, json, random, os as o, re, requests as r, time
 load_dotenv()
 
-if sys.argv[1] == "2": API_KEY = o.getenv("API_KEY_2"); API_ADDR = o.getenv("API_ADDR_2"); API_MODEL = o.getenv("API_MODEL_2")
-elif sys.argv[1] == "3": API_ADDR = o.getenv("API_ADDR_3")
-else: API_KEY = o.getenv("API_KEY_1"); API_ADDR = o.getenv("API_ADDR_1"); API_MODEL = o.getenv("API_MODEL_1")
 WP_HOST = o.getenv("WP_HOST"); WP_USER = o.getenv("WP_USER"); WP_PW = o.getenv("WP_PW"); CATEGORY_FILE = Path(__file__).resolve().parent / "wordpress-categories.json"
 
 def search_trending_topic(a):
@@ -31,44 +20,56 @@ def search_trending_topic(a):
 
 def universal_query(topic):
     print("[INFO] Attempting Google Gemini...")
-
-    GOOGLE_API_KEY = o.getenv("GOOGLE_API_KEY")
-    GOOGLE_MODEL = "gemini-3.1-flash-lite-preview"
-    GOOGLE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GOOGLE_MODEL}:generateContent?key={GOOGLE_API_KEY}"
-
     system_prompt = """You are an expert SEO blog writer. You are an API that returns ONLY valid JSON.
 STRICT RULES:
 - Output ONLY JSON
-- No explanations
-- No markdown
-- No text before or after JSON
-- No code fences
+- content MUST be valid HTML (NO markdown)
+- DO NOT use #, *, or markdown syntax
+- Use semantic HTML tags: <h2>, <h3>, <p>, <ul>, <li>, <strong>
+- Format everything properly for WordPress
+- No explanations, no extra text
 """
-    user_msg = f"""
-Write a high-quality, SEO-optimized blog post about "{topic}".
-
+    user_msg = f"""Write a high-quality, SEO-optimized blog post about "{topic}".
 Requirements:
-- Write a compelling, click-worthy title
-- Include structured sections (H2/H3), intro, conclusion
-- Add FAQ section
+- Content MUST be in clean HTML
+- Use <h2> for main sections
+- Use <h3> for subsections
+- Use <p> for paragraphs
+- Use <ul>/<li> for lists
+- Use <strong> for important keywords
+- Add FAQ section with <h3> questions and <p> answers
+- Do NOT use markdown (#, ##, ###, *)
+- Do NOT include <html> or <body>
 - At least 1200 words
-- Output STRICT JSON
-
-Schema:
-{{"title":"...","excerpt":"under 160 chars","tags":["tag1","tag2","tag3"],"content":"HTML article"}}
 """
     try:
         payload = {
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
-            "generationConfig": {"temperature": 0.7, "responseMimeType": "application/json", "maxOutputTokens": 16384}
+            "generationConfig": {
+                "temperature": 0.7,
+                "topK": 40,
+                "topP": 0.95,
+                "responseMimeType": "application/json",
+                "responseSchema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "title": {"type": "STRING"},
+                        "excerpt": {"type": "STRING"},
+                        "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
+                        "content": {"type": "STRING"}
+                    },
+                    "required": ["title", "excerpt", "tags", "content"]
+                },
+                "maxOutputTokens": 8192
+            }
         }
-        res = r.post(GOOGLE_URL, json=payload, timeout=120)
+        res = r.post(o.getenv("API_ADDR_3"), json=payload, timeout=120)
         if res.status_code == 200: return res.json()['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
         print(f"[ERROR] Fallback & Google exception: {e}")
-    payload = {"model": API_MODEL, "messages": [{"role": "system", "content": system_prompt},{"role": "user", "content": user_msg}], "response_format": {"type": "json_object"}}
-    res = r.post(f"{API_ADDR}/chat/completions", headers={"Authorization": f"Bearer {API_KEY}"}, json=payload, timeout=600)
+    payload = {"model": o.getenv("API_MODEL_2"), "messages": [{"role": "system", "content": system_prompt},{"role": "user", "content": user_msg}], "response_format": {"type": "json_object"}}
+    res = r.post(f"{o.getenv("API_ADDR_2")}/chat/completions", headers={"Authorization": f"Bearer {o.getenv("API_KEY_2")}"}, json=payload, timeout=600)
     data = res.json()
     if 'choices' in data: return data['choices'][0]['message']['content']
     raise ValueError("Both Google and fallback failed")
@@ -119,7 +120,7 @@ def post_to_discord(a):
     except Exception as e: print(f"[ERROR] Discord failed: {e}")
 
 def post_to_bluesky(a, b, c):
-    try: d = Client(); d.login(login=o.getenv("BLUESKY_USER"), password=o.getenv("BLUESKY_PASS")); d.send_post(text=a[:300], embed={"$type":"app.bsky.embed.external","external":{"uri":b,"title":a[:50],"description":"Read more","thumb":d.upload_blob(r.get(c).content).blob}})
+    try: d = BC(); d.login(login=o.getenv("BLUESKY_USER"), password=o.getenv("BLUESKY_PASS")); d.send_post(text=a[:300], embed={"$type":"app.bsky.embed.external","external":{"uri":b,"title":a[:50],"description":"Read more","thumb":d.upload_blob(r.get(c).content).blob}})
     except Exception as e: print(f"[ERROR] Bluesky failed: {e}")
 
 def post_to_dev(a, b, c):
