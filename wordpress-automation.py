@@ -15,7 +15,6 @@ def search_trending_topic(a):
 
 def universal_query(topic):
     print("[INFO] Attempting generation")
-
     prompt = f"""
 You are an expert SEO blog writer.
 You MUST return ONLY valid JSON.
@@ -57,16 +56,13 @@ Return ONLY valid JSON.
 """
     try:
         payload = {
-            "model": "google/gemini-3.1-flash-lite",
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"},
-            "max_tokens": 3000,
+            "model": "google/gemini-3.1-flash-lite", "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"}, "max_tokens": 3000,
             "provider": {"order": ["google-ai-studio"], "allow_fallbacks": False}
         }
         res = r.post("https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {o.getenv('OR_SK')}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=120
+            json=payload, timeout=120
         )
         data = res.json()
         return data['choices'][0]['message']['content']
@@ -101,24 +97,21 @@ def main():
         media_id = random.choice(range(int(o.getenv("MEDIA_RANGE_START")), int(o.getenv("MEDIA_RANGE_END"))))
         image_url = r.get(f"https://{s.WP_HOST}/wp-json/wp/v2/media/{media_id}", auth=HTTPBasicAuth(s.WP_USER, s.WP_PW)).json().get("source_url")
         d = r.post(f"https://{s.WP_HOST}/wp-json/wp/v2/posts", auth=HTTPBasicAuth(s.WP_USER, s.WP_PW), headers={"Content-Type": "application/json"}, data=json.dumps({"title": title, "content": post_data["content"], "excerpt": post_data.get("excerpt", ""), "status": "publish", "categories": [category_id], "tags": get_tag_ids(post_data.get("tags", [])), "featured_media": media_id}))
-        if d.status_code == 201:
-            post_url = d.json().get('link')
-            content = f"[OpenClaw] {title}\n\n{post_data.get('excerpt', '')}\n\nRead more: {post_url}"
-            s_content = f"[OpenClaw] {post_data.get('excerpt', '')}\n\nRead more: {post_url}"
-            md_content = html2text.html2text(post_data["content"])
-            print(f"[INFO] Post URL: {post_url}")
-            s.submit_to_indexnow([post_url])
-            s.post_to_linkedin(content);
-            s.post_to_threads(content, image_url)
-            s.post_to_facebook(content)
-            s.post_to_telegram(content)
-            s.post_to_discord(content)
-            s.post_to_bluesky(content, post_url, image_url)
-            s.post_to_dev(title, md_content, post_url)
-            # s.post_to_hashnode(title, md_content)
-            s.post_to_wordpress_com(title, content)
-            asyncio.run(s.nostr_post_async(s_content))
-        else: print(f"[ERROR] Failed to publish post. HTTP {d.status_code}: {d.text}")
+        post_url = d.json().get('link')
+        content = f"[OpenClaw] {title}\n\n{post_data.get('excerpt', '')}\n\nRead more: {post_url}"
+        s_content = f"[OpenClaw] {post_data.get('excerpt', '')}\n\nRead more: {post_url}"
+        md_content = html2text.html2text(post_data["content"])
+        print(f"[INFO] Post URL: {post_url}")
+        s.submit_to_indexnow([post_url])
+        s.post_to_linkedin(content);
+        s.post_to_threads(content, image_url)
+        s.post_to_facebook(content)
+        s.post_to_telegram(content)
+        s.post_to_discord(content)
+        s.post_to_bluesky(content, post_url, image_url)
+        s.post_to_dev(title, md_content, post_url)
+        s.post_to_wordpress_com(title, content)
+        asyncio.run(s.nostr_post_async(s_content))
 
 if __name__ == "__main__":
     main()
