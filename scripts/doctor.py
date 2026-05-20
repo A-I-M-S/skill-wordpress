@@ -319,40 +319,47 @@ def check_youtube() -> tuple[str, str]:
     cfg = settings.youtube
     if not cfg.enabled:
         return SKIP, "YOUTUBE_ENABLED=false"
+
     secrets = Path(cfg.client_secrets_file)
     if not secrets.exists():
         return FAIL, f"client secrets not found: {secrets}"
+
+    token_file = Path(cfg.token_file)
+    if not token_file.exists():
+        return SKIP, f"no token yet — run: python3 scripts/youtube_auth.py"
+
     try:
         from google.oauth2.credentials import Credentials  # type: ignore
-        from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore
+        from google.auth.transport.requests import Request  # type: ignore
         from googleapiclient.discovery import build  # type: ignore
     except ImportError:
         return FAIL, "pip install google-api-python-client google-auth-oauthlib"
 
-    scopes = ["https://www.googleapis.com/auth/youtube.upload",
-              "https://www.googleapis.com/auth/youtube.readonly"]
-    token_file = Path(cfg.token_file)
-    creds = None
-    if token_file.exists():
-        creds = Credentials.from_authorized_user_file(str(token_file), scopes)
-        if creds and creds.expired and creds.refresh_token:
-            from google.auth.transport.requests import Request  # type: ignore
-            creds.refresh(Request())
-            token_file.write_text(creds.to_json())
-    else:
-        flow = InstalledAppFlow.from_client_secrets_file(str(secrets), scopes)
-        creds = flow.run_local_server(port=0, open_browser=False)
-        token_file.write_text(creds.to_json())
+    scopes = [
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+    ]
+    creds = Credentials.from_authorized_user_file(str(token_file), scopes)
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                token_file.write_text(creds.to_json())
+            except Exception as exc:
+                return FAIL, f"token refresh failed: {exc} — re-run scripts/youtube_auth.py"
+        else:
+            return FAIL, "token invalid — re-run scripts/youtube_auth.py"
 
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
     resp = yt.channels().list(part="snippet,statistics", mine=True).execute()
     items = resp.get("items", [])
     if not items:
-        return FAIL, "API call OK but no channel on this account"
+        return FAIL, "no channel on this account"
     ch = items[0]
-    snip = ch["snippet"]; stats = ch["statistics"]
-    return OK, (f"channel={snip['title']} subs={stats.get('subscriberCount', '?')} "
-                f"videos={stats.get('videoCount', '?')}")
+    title = ch["snippet"]["title"]
+    subs = ch["statistics"].get("subscriberCount", "?")
+    vids = ch["statistics"].get("videoCount", "?")
+    return OK, f"channel={title} subs={subs} videos={vids}"
 
 
 def check_hn() -> tuple[str, str]:
