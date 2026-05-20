@@ -1,0 +1,15 @@
+[
+  {"id": 16,    "name": "AI Agent"},
+  {"id": 29,    "name": "AI as a Service"},
+  {"id": 203,   "name": "AI in General"},
+  {"id": 5484,  "name": "AI Tools"},
+  {"id": 74,    "name": "Machine Learning"},
+  {"id": 11698, "name": "Quantitative AI"},
+  {"id": 6570,  "name": "Cryptocurrency"},
+  {"id": 2175,  "name": "Defi"},
+  {"id": 6504,  "name": "Entry"},
+  {"id": 3210,  "name": "Indicators"},
+  {"id": 4401,  "name": "Pattern"},
+  {"id": 19160, "name": "Fundamental"},
+  {"id": 2678,  "name": "Candle"}
+]

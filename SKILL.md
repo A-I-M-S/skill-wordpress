@@ -1,77 +1,54 @@
 ---
-name: skill-wordpress  
-description: "Automated SEO autoblogging and multi-platform distribution system. Use when generating long-form SEO content, publishing to WordPress, distributing content across platforms like LinkedIn, Threads, Facebook, Telegram, Discord, Bluesky, Hashnode, WordPress.com, and Nostr, and triggering IndexNow indexing."
+name: skill-wordpress
+description: "Automated SEO autoblogging and multi-platform distribution. Generates long-form SEO articles, publishes to WordPress with E-E-A-T enrichment + ByteDance Seedream images, and fans out to LinkedIn, Bluesky, Threads, Facebook, Telegram, Discord, Hashnode, Nostr, Reddit, Hacker News (semi-auto) and YouTube Shorts. Enforces a hard 4-posts/day publishing cap to stay clear of Google's scaled-content-abuse signal."
 ---
 
-# OpenClaw SEO Autoblogging
+# OpenClaw — SEO Autoblogging & Distribution (v0.2)
 
-Automate SEO content generation, publishing, and distribution across multiple platforms.
+A maintained, package-structured pipeline for AI-driven content + multi-channel distribution. Built with strict velocity guardrails because the legacy 15-min cron (96 posts/day) is the exact pattern Google's Helpful Content system penalises.
 
 ## Overview
 
-This skill runs a full SEO autoblogging pipeline:
-- AI-generated long-form articles  
-- WordPress publishing  
-- Multi-platform distribution  
-- Indexing via IndexNow  
+- AI-generated articles (OpenRouter with fallback chain)
+- E-E-A-T injection: real author block, JSON-LD Article schema, internal links
+- ByteDance Seedream hero images
+- WordPress REST publishing with daily quota + cooldown + duplicate-title guard
+- Multi-platform fan-out, each in its own module
+- Promote-existing-post mode for back-catalog traffic growth
 
-## Agent Guidance
+## Quick start
 
-Treat this skill as a content automation engine.
+```bash
+pip install -r requirements.txt
+cp .env.sample .env       # fill in keys
+python3 scripts/publish.py --dry-run    # smoke test
+python3 scripts/publish.py              # publish + distribute
+python3 scripts/promote.py              # re-share an existing post
+python3 scripts/fetch_categories.py     # refresh data/categories.full.json
+```
 
-When invoked, the expected flow is:
-- generate SEO article  
-- publish to WordPress  
-- distribute content  
-- trigger indexing  
+## Recommended cron
 
-## Installation
+```cron
+0 */6 * * *   cd /path/to/skill-wordpress && python3 wordpress-automation.py
+30 */2 * * *  cd /path/to/skill-wordpress && python3 scripts/promote.py
+```
 
-git clone <repo-url>  
-cd <repo>  
-pip install -r requirements.txt  
-cp .env.sample .env  
+**Do NOT** run more often than every 4–6 hours. The pipeline will refuse to publish above `MAX_POSTS_PER_DAY` (default 4) or before `MIN_MINUTES_BETWEEN_POSTS` (default 240) has elapsed.
 
-## Initialisation
+## Layout
 
-Before running the main pipeline, fetch WordPress categories:
+```
+openclaw/        # main package (config, llm, seo, trends, indexing, images, wordpress, distribution)
+scripts/         # publish.py, promote.py, fetch_categories.py
+data/            # curated_categories.json, categories.full.json
+wordpress-automation.py / socialMedia.py   # legacy shims for backward-compat
+```
 
-python3 wordpress-fetch-categories.py  
-
-This generates:
-- wordpress-categories.json  
-
-This file is required for category selection during content publishing.
-
-## Running
-
-python3 wordpress-automation.py 1  
-
-Modes:
-- 1 → OpenRouter  
-- 2 → NVIDIA  
-- 3 → Gemini  
-
-## Distribution Channels
-
-### In Place
-- LinkedIn (personal)  
-- Threads  
-- Facebook page  
-- Telegram  
-- Discord  
-- Bluesky  
-- Hashnode  
-- WordPress.com  
-- Nostr  
-
-## Indexing
-
-- IndexNow integration  
+See README.md for the full architecture, distributor matrix, Reddit/HN/YouTube setup, and migration notes from v0.1.
 
 ## Notes
 
-- Designed for automation and scale  
-- External APIs may change behavior  
-- Ensure wordpress-categories.json exists before running  
-- Refresh categories periodically if WordPress categories change
+- `data/curated_categories.json` is the niche-restricted category list used by `publish.py`. Edit it to control which categories the autoblogger writes for.
+- All env vars are accessed via `openclaw.config.settings` — do not read env from any other module.
+- Reddit defaults OFF, YouTube Shorts defaults OFF, WordPress.com mirror defaults OFF (duplicate-content footgun), Dev.to defaults OFF (account ban risk).

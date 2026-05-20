@@ -4,3 +4,8 @@ html2text
 ddgs
 atproto
 nostr-sdk
+# New in v0.2
+praw                          # Reddit
+edge-tts                      # Free neural TTS for YouTube Shorts
+google-api-python-client      # YouTube Data API
+google-auth-oauthlib          # YouTube OAuth

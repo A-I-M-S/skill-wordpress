@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+artifacts/
+youtube-token.json
+youtube-client-secrets.json
+*.egg-info/
+.venv/
+venv/
+.DS_Store
