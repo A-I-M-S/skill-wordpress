@@ -37,7 +37,8 @@ from openclaw.distribution.base import PostPayload  # noqa: E402
 from openclaw.indexing import submit_bing, submit_indexnow  # noqa: E402
 from openclaw.llm import LLMClient  # noqa: E402
 from openclaw.logging_utils import log  # noqa: E402
-from openclaw.trends import fetch_trending_topic  # noqa: E402
+from openclaw.keywords import fetch_trending_topic  # noqa: E402
+from openclaw.topic_filter import is_safe_topic  # noqa: E402
 from openclaw.wordpress.publisher import Publisher  # noqa: E402
 
 
@@ -87,7 +88,17 @@ def main() -> int:
     category = pick_category(args.category)
     log.info("publish.start category=%s id=%d", category["name"], category["id"])
 
-    topic = fetch_trending_topic(category["name"])
+    topic = None
+    for attempt in range(3):
+        candidate = fetch_trending_topic(category["name"])
+        ok, reason = is_safe_topic(candidate)
+        if ok:
+            topic = candidate
+            break
+    if topic is None:
+        log.error("publish.aborted reason=topic_filter_failed")
+        return 1
+
     article = LLMClient().generate_article(topic)
     log.info("publish.generated words=%d title=%r", len(__import__("re").sub(r"<[^>]+>", " ", article.content).split()), article.title)
 
