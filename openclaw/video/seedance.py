@@ -53,9 +53,11 @@ class SeedanceClient:
         self.api_key = cfg.api_key
         self.endpoint = cfg.endpoint or DEFAULT_ENDPOINT
         self.model = cfg.model
-        self.resolution = cfg.resolution
-        self.duration = max(5, min(int(cfg.duration), 15))
+        # dreamina-seedance-2-0-fast accepts 5..12 seconds.
+        self.duration = max(5, min(int(cfg.duration), 12))
         self.ratio = cfg.ratio
+        self.generate_audio = getattr(cfg, "generate_audio", True)
+        self.watermark = getattr(cfg, "watermark", False)
         self.poll_interval = 5
         self.poll_timeout = 600  # 10 min hard cap
 
@@ -65,16 +67,12 @@ class SeedanceClient:
         prompt: str,
         *,
         out_dir: Optional[Path] = None,
-        camera_fixed: bool = False,
     ) -> SeedanceVideo:
         """Generate a video from a text prompt and return the local mp4 path."""
-        full_prompt = self._build_prompt(prompt, camera_fixed=camera_fixed)
-        task_id = self._submit({
-            "model": self.model,
-            "content": [{"type": "text", "text": full_prompt}],
-        })
+        payload = self._payload(content=[{"type": "text", "text": prompt.strip()}])
+        task_id = self._submit(payload)
         video_url = self._poll(task_id)
-        return self._download(task_id, video_url, full_prompt, out_dir)
+        return self._download(task_id, video_url, prompt, out_dir)
 
     def image_to_video(
         self,
@@ -82,34 +80,36 @@ class SeedanceClient:
         image_url: str,
         *,
         out_dir: Optional[Path] = None,
-        camera_fixed: bool = False,
     ) -> SeedanceVideo:
         """Animate an existing image (e.g. a Seedream hero) into a video."""
-        full_prompt = self._build_prompt(prompt, camera_fixed=camera_fixed)
-        task_id = self._submit({
-            "model": self.model,
-            "content": [
-                {"type": "text", "text": full_prompt},
-                {"type": "image_url", "image_url": {"url": image_url}},
-            ],
-        })
+        payload = self._payload(content=[
+            {"type": "text", "text": prompt.strip()},
+            {
+                "type": "image_url",
+                "image_url": {"url": image_url},
+                "role": "reference_image",
+            },
+        ])
+        task_id = self._submit(payload)
         video_url = self._poll(task_id)
-        return self._download(task_id, video_url, full_prompt, out_dir)
+        return self._download(task_id, video_url, prompt, out_dir)
 
     # ---- internals ----
-    def _build_prompt(self, prompt: str, *, camera_fixed: bool) -> str:
-        # Seedance reads inline `--flag value` directives from the prompt string.
-        flags = [
-            f"--ratio {self.ratio}",
-            f"--duration {self.duration}",
-            f"--resolution {self.resolution}",
-            f"--camera_fixed {'true' if camera_fixed else 'false'}",
-        ]
-        return f"{prompt.strip()} " + " ".join(flags)
+    def _payload(self, content: list[dict]) -> dict:
+        return {
+            "model": self.model,
+            "content": content,
+            "generate_audio": self.generate_audio,
+            "ratio": self.ratio,
+            "duration": self.duration,
+            "watermark": self.watermark,
+        }
 
     def _submit(self, payload: dict) -> str:
-        log.info("seedance.submit model=%s duration=%ss ratio=%s",
-                 self.model, self.duration, self.ratio)
+        log.info(
+            "seedance.submit model=%s duration=%ss ratio=%s audio=%s",
+            self.model, self.duration, self.ratio, self.generate_audio,
+        )
         resp = requests.post(
             self.endpoint,
             headers={
@@ -120,7 +120,11 @@ class SeedanceClient:
             timeout=60,
         )
         if resp.status_code >= 400:
-            raise RuntimeError(f"seedance submit failed {resp.status_code}: {resp.text[:300]}")
+            log.error("seedance.submit_err status=%s body=%s",
+                      resp.status_code, resp.text[:500])
+            raise RuntimeError(
+                f"seedance submit failed {resp.status_code}: {resp.text[:300]}"
+            )
         task_id = resp.json().get("id") or resp.json().get("task_id")
         if not task_id:
             raise RuntimeError(f"seedance submit returned no task id: {resp.text[:300]}")
@@ -182,7 +186,7 @@ class SeedanceClient:
         return SeedanceVideo(
             path=path,
             duration_s=self.duration,
-            resolution=self.resolution,
+            resolution=getattr(self, "resolution", ""),
             prompt=prompt,
             task_id=task_id,
         )

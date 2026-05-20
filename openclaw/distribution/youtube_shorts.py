@@ -57,13 +57,19 @@ def post(
         script = _build_short_script(payload)
         log.info("shorts.script len=%d", len(script))
 
-        video = _generate_video(payload, hero_image_url, out_dir)
-        audio = _generate_narration(script, out_dir, narration_voice)
-        final = _mux(video, audio, out_dir)
-        log.info("shorts.composed path=%s", final)
+        video = _generate_video(payload, hero_image_url, out_dir, script=script)
+        log.info("shorts.video generated path=%s", video.path)
 
-        url = _upload_to_youtube(final, payload, script)
-        return url
+        if settings.seedance.generate_audio:
+            # Seedance produced an mp4 with audio already baked in.
+            final = video.path
+            log.info("shorts.audio source=seedance_native (skipping edge-tts)")
+        else:
+            audio = _generate_narration(script, out_dir, narration_voice)
+            final = _mux(video, audio, out_dir)
+            log.info("shorts.composed path=%s", final)
+
+        return _upload_to_youtube(final, payload, script)
     except Exception as exc:
         log.warning("shorts.fail err=%s", exc)
         return None
@@ -94,6 +100,7 @@ def _generate_video(
     payload: PostPayload,
     hero_image_url: Optional[str],
     out_dir: Path,
+    script: Optional[str] = None,
 ) -> Path:
     client = SeedanceClient()
     prompt = build_shorts_prompt(payload.title, payload.excerpt[:200])

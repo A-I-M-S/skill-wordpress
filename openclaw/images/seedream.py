@@ -33,10 +33,13 @@ class SeedreamImage:
 class SeedreamClient:
     def __init__(self) -> None:
         cfg = settings.seedream
+        if not cfg.api_key:
+            raise RuntimeError("SEEDREAM_API_KEY not set")
         self.api_key = cfg.api_key
         self.endpoint = cfg.endpoint
         self.model = cfg.model
-        self.size = cfg.size
+        self.size = cfg.size              # "1K" | "2K"
+        self.watermark = getattr(cfg, "watermark", True)
 
     def _post(self, payload: dict) -> dict:
         if not self.api_key:
@@ -75,6 +78,9 @@ class SeedreamClient:
             "prompt": prompt,
             "size": size or self.size,
             "response_format": "url",
+            "sequential_image_generation": "disabled",
+            "stream": False,
+            "watermark": self.watermark,
         }
         if seed is not None:
             body["seed"] = seed

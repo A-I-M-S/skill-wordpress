@@ -96,10 +96,11 @@ class SeedreamConfig:
         default_factory=lambda: _env(
             "SEEDREAM_ENDPOINT",
             "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
-        )
+        ) or "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations"
     )
-    model: str = field(default_factory=lambda: _env("SEEDREAM_MODEL", "seedream-3-0-t2i-250415"))
-    size: str = field(default_factory=lambda: _env("SEEDREAM_SIZE", "1024x1024"))
+    model: str = field(default_factory=lambda: _env("SEEDREAM_MODEL", "seedream-5-0-260128") or "seedream-5-0-260128")
+    size: str = field(default_factory=lambda: _env("SEEDREAM_SIZE", "1K"))
+    watermark: bool = field(default_factory=lambda: _env_bool("SEEDREAM_WATERMARK", True))
 
 
 @dataclass(frozen=True)
@@ -117,11 +118,13 @@ class SeedanceConfig:
         )
     )
     model: str = field(
-        default_factory=lambda: _env("SEEDANCE_MODEL", "seedance-1-0-pro-250528")
+        default_factory=lambda: _env("SEEDANCE_MODEL", "dreamina-seedance-2-0-fast-260128")
     )
     resolution: str = field(default_factory=lambda: _env("SEEDANCE_RESOLUTION", "1080p"))
     duration: int = field(default_factory=lambda: _env_int("SEEDANCE_DURATION", 10))
     ratio: str = field(default_factory=lambda: _env("SEEDANCE_RATIO", "9:16"))
+    generate_audio: bool = field(default_factory=lambda: _env_bool("SEEDANCE_GENERATE_AUDIO", True))
+    watermark: bool = field(default_factory=lambda: _env_bool("SEEDANCE_WATERMARK", False))
 
 
 @dataclass(frozen=True)
