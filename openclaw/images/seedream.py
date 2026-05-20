@@ -38,8 +38,25 @@ class SeedreamClient:
         self.api_key = cfg.api_key
         self.endpoint = cfg.endpoint
         self.model = cfg.model
-        self.size = cfg.size              # "1K" | "2K"
-        self.watermark = getattr(cfg, "watermark", True)
+        self.watermark = cfg.watermark
+        self.size = self._normalize_size(cfg.size)
+
+    @staticmethod
+    def _normalize_size(raw: str) -> str:
+        """Translate legacy WxH pixel strings to K-notation: total_pixels >= 8.3M → "4K", >=3.6M → "2K", else "2K" (forced upgrade since 1K is below the API minimum and would 400). Accepts "1K"/"2K"/"4K" passthrough. Log a warning when an upgrade happens so the user knows."""
+        if raw in ("1K", "2K", "4K"):
+            return raw
+        # Parse WxH
+        parts = raw.split("x")
+        if len(parts) != 2:
+            return raw
+        w, h = int(parts[0]), int(parts[1])
+        total = w * h
+        if total >= 8_300_000:
+            return "4K"
+        if total >= 3_600_000:
+            return "2K"
+        return "2K"
 
     def _post(self, payload: dict) -> dict:
         if not self.api_key:

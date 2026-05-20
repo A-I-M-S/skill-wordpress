@@ -108,6 +108,32 @@ class LLMClient:
             raise ValueError("No JSON object found in LLM response")
         return json.loads(match.group(0))
 
+    def complete_text(self, prompt: str, max_tokens: Optional[int] = None) -> str:
+        """Plain-text completion across the model fallback chain. Returns ''
+        if every model fails. Use for cap"""
+        attempts: List[str] = [self.primary, *self.fallbacks]
+        for model in attempts:
+            payload: Dict[str, Any] = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens or self.max_tokens,
+            }
+            try:
+                response = requests.post(
+                    OPENROUTER_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=180,
+                )
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"]
+            except Exception:
+                pass
+        return ""
+
     def generate_article(self, topic: str) -> GeneratedArticle:
         prompt = SEO_PROMPT_TEMPLATE.format(
             topic=topic,

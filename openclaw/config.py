@@ -99,7 +99,7 @@ class SeedreamConfig:
         ) or "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations"
     )
     model: str = field(default_factory=lambda: _env("SEEDREAM_MODEL", "seedream-5-0-260128") or "seedream-5-0-260128")
-    size: str = field(default_factory=lambda: _env("SEEDREAM_SIZE", "1K"))
+    size: str = field(default_factory=lambda: _env("SEEDREAM_SIZE", "2K"))
     watermark: bool = field(default_factory=lambda: _env_bool("SEEDREAM_WATERMARK", True))
 
 
