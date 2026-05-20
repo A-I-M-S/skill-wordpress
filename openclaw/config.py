@@ -93,6 +93,28 @@ class SeedreamConfig:
 
 
 @dataclass(frozen=True)
+class SeedanceConfig:
+    """ByteDance Seedance (Volcano Engine / BytePlus Ark) video generation.
+
+    Async task model — submit, poll, download. Native 9:16 for Shorts.
+    Duration is clamped to 5..15s by the client."""
+
+    api_key: Optional[str] = field(default_factory=lambda: _env("SEEDANCE_API_KEY"))
+    endpoint: str = field(
+        default_factory=lambda: _env(
+            "SEEDANCE_ENDPOINT",
+            "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks",
+        )
+    )
+    model: str = field(
+        default_factory=lambda: _env("SEEDANCE_MODEL", "seedance-1-0-pro-250528")
+    )
+    resolution: str = field(default_factory=lambda: _env("SEEDANCE_RESOLUTION", "1080p"))
+    duration: int = field(default_factory=lambda: _env_int("SEEDANCE_DURATION", 10))
+    ratio: str = field(default_factory=lambda: _env("SEEDANCE_RATIO", "9:16"))
+
+
+@dataclass(frozen=True)
 class RedditConfig:
     client_id: Optional[str] = field(default_factory=lambda: _env("REDDIT_CLIENT_ID"))
     client_secret: Optional[str] = field(default_factory=lambda: _env("REDDIT_CLIENT_SECRET"))
@@ -188,6 +210,7 @@ class Settings:
     wp: WordPressConfig = field(default_factory=WordPressConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     seedream: SeedreamConfig = field(default_factory=SeedreamConfig)
+    seedance: SeedanceConfig = field(default_factory=SeedanceConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
     hn: HackerNewsConfig = field(default_factory=HackerNewsConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
