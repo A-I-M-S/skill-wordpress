@@ -33,6 +33,7 @@ from typing import List, Optional
 from ..config import ARTIFACTS_DIR, settings
 from ..logging_utils import log
 from ..video.seedance import SeedanceClient, build_shorts_prompt
+from ..video_safety import build_safe_prompt, is_safe_hero_url
 from .base import PostPayload
 
 
@@ -135,14 +136,17 @@ def _generate_video(
     generate_audio: Optional[bool] = None,
 ) -> Path:
     client = SeedanceClient()
-    prompt = build_shorts_prompt(payload.title, payload.excerpt[:200])
-    if hero_image_url:
-        log.info("shorts.seedance mode=i2v hero=%s audio=%s", hero_image_url, generate_audio)
+    prompt = build_safe_prompt(payload.title, payload.excerpt[:200])
+    log.info("shorts.safe_prompt %r", prompt[:140])
+    if hero_image_url and is_safe_hero_url(hero_image_url):
+        log.info("shorts.seedance mode=i2v audio=%s hero=%s",
+                 generate_audio, hero_image_url)
         video = client.image_to_video(
             prompt, hero_image_url, out_dir=out_dir, generate_audio=generate_audio,
         )
     else:
-        log.info("shorts.seedance mode=t2v audio=%s", generate_audio)
+        log.info("shorts.seedance mode=t2v audio=%s hero_unsafe=%s",
+                 generate_audio, hero_image_url)
         video = client.text_to_video(
             prompt, out_dir=out_dir, generate_audio=generate_audio,
         )

@@ -1,23 +1,27 @@
 """One-shot orchestrator: figures out what to do this hour, then does it.
 
-This is the recommended cron entry — run every hour, and the script
-decides whether to publish, promote, or generate a Short based on the
-schedule below.
+Recommended cron — ONE line replaces every other entry:
 
-    0 * * * * cd /path/to/skill-wordpress && python3 scripts/orchestrate.py
+    0 * * * * cd /path/to/skill-wordpress && /usr/bin/python3 scripts/orchestrate.py
 
 Schedule (Singapore time by default; set ORCHESTRATOR_TZ to override):
-  - publish.py : at 04:00, 10:00, 16:00, 22:00  (every 6h, 4/day)
-  - promote.py : at every even hour NOT covered by publish
-  - shorts.py  : at 20:00  (1×/day, peak SGT engagement)
 
-Why this shape:
-  - 4 posts/day is the hard cap on new content.
-  - Promotion of existing 8k posts is the real traffic lever; runs ~10×/day.
-  - YouTube Shorts are 1×/day to stay clear of the algorithm's spam filter.
+  Hour (SGT)  Action(s)
+  ----------  ------------------------------------------------------
+  04          refresh keyword pool (Mondays only) + publish
+  10, 16, 22  publish.py
+  20          shorts.py + promote.py
+  even hrs    promote.py  (re-share existing posts, highest ROI)
+  odd hrs     idle
+
+Daily totals: 4 publish + 1 short + ~6 promote = ~11 runs/day.
+Weekly: +1 keyword-pool refresh on Monday 04:00.
+
+Pass --what to see what THIS hour would do without running anything.
 """
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -34,10 +38,31 @@ TZ = ZoneInfo(os.getenv("ORCHESTRATOR_TZ", "Asia/Singapore"))
 
 PUBLISH_HOURS = {4, 10, 16, 22}
 SHORTS_HOUR = 20
+WEEKLY_REFRESH_HOUR = 4
+WEEKLY_REFRESH_WEEKDAY = 0  # 0 = Monday
 
 
-def _run(label: str, script: str, *args: str) -> int:
-    cmd = [sys.executable, str(ROOT / "scripts" / script), *args]
+def _plan(now: datetime) -> list[tuple[str, list[str]]]:
+    """Return the list of (label, [script, *args]) jobs for this hour."""
+    hour = now.hour
+    jobs: list[tuple[str, list[str]]] = []
+
+    if hour == WEEKLY_REFRESH_HOUR and now.weekday() == WEEKLY_REFRESH_WEEKDAY:
+        jobs.append(("refresh_keywords", ["refresh_keywords.py"]))
+
+    if hour in PUBLISH_HOURS:
+        jobs.append(("publish", ["publish.py"]))
+    elif hour == SHORTS_HOUR:
+        jobs.append(("shorts", ["shorts.py"]))
+        jobs.append(("promote", ["promote.py"]))
+    elif hour % 2 == 0:
+        jobs.append(("promote", ["promote.py"]))
+
+    return jobs
+
+
+def _run(label: str, script_args: list[str]) -> int:
+    cmd = [sys.executable, str(ROOT / "scripts" / script_args[0]), *script_args[1:]]
     log.info("orchestrate.run %s -> %s", label, " ".join(cmd))
     proc = subprocess.run(cmd, cwd=ROOT)
     log.info("orchestrate.done %s rc=%d", label, proc.returncode)
@@ -45,21 +70,33 @@ def _run(label: str, script: str, *args: str) -> int:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description="OpenClaw hourly orchestrator.")
+    ap.add_argument("--what", action="store_true",
+                    help="Print the planned jobs for THIS hour and exit.")
+    args = ap.parse_args()
+
     now = datetime.now(TZ)
-    hour = now.hour
-    log.info("orchestrate.tick local_time=%s hour=%d", now.isoformat(timespec="minutes"), hour)
+    jobs = _plan(now)
+    log.info(
+        "orchestrate.tick local_time=%s hour=%d weekday=%d jobs=%d",
+        now.isoformat(timespec="minutes"), now.hour, now.weekday(), len(jobs),
+    )
+
+    if args.what:
+        if not jobs:
+            print(f"{now.isoformat(timespec='minutes')} — idle")
+        else:
+            for label, script_args in jobs:
+                print(f"{now.isoformat(timespec='minutes')} — {label}: {' '.join(script_args)}")
+        return 0
+
+    if not jobs:
+        log.info("orchestrate.idle hour=%d — nothing scheduled", now.hour)
+        return 0
 
     rc = 0
-    if hour in PUBLISH_HOURS:
-        rc |= _run("publish", "publish.py")
-    elif hour == SHORTS_HOUR:
-        # Run promote AND shorts at the peak hour.
-        rc |= _run("shorts", "shorts.py")
-        rc |= _run("promote", "promote.py")
-    elif hour % 2 == 0:
-        rc |= _run("promote", "promote.py")
-    else:
-        log.info("orchestrate.idle hour=%d — nothing scheduled", hour)
+    for label, script_args in jobs:
+        rc |= _run(label, script_args)
     return rc
 
 
