@@ -12,6 +12,10 @@ from ..config import settings
 from ..logging_utils import log
 
 
+def _slugify_lookup(name: str) -> str:
+    return name.strip().lower().replace(" ", "-")
+
+
 class WordPressClient:
     def __init__(self) -> None:
         cfg = settings.wp
@@ -23,12 +27,20 @@ class WordPressClient:
 
     # ---- tags ----
     def ensure_tag(self, name: str) -> int:
-        existing = requests.get(
-            f"{self.base}/tags",
-            params={"search": name, "per_page": 5},
-            auth=self.auth,
-            timeout=30,
-        ).json()
+        name = name.strip()
+        if not name:
+            raise ValueError("ensure_tag: name is empty")
+        existing = []
+        for page in range(1, 6):
+            resp = requests.get(
+                f"{self.base}/tags",
+                params={"search": name, "per_page": 100, "page": page},
+                auth=self.auth,
+                timeout=30,
+            )
+            if not resp.ok:
+                break
+            existing.extend(resp.json())
         for tag in existing:
             if tag.get("name", "").lower() == name.lower():
                 return tag["id"]
@@ -38,8 +50,14 @@ class WordPressClient:
             headers={"Content-Type": "application/json"},
             json={"name": name},
             timeout=30,
-        ).json()
-        return created["id"]
+        )
+        if created.status_code == 400:
+            data = created.json()
+            if data.get("code") == "term_exists":
+                return data.get("term_id")
+            raise RuntimeError(f"Failed to create tag: {created.text}")
+        created.raise_for_status()
+        return created.json()["id"]
 
     def ensure_tags(self, names: List[str]) -> List[int]:
         return [self.ensure_tag(n) for n in names if n.strip()]

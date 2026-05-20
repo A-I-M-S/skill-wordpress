@@ -50,7 +50,17 @@ class SeedreamClient:
             json=payload,
             timeout=180,
         )
-        response.raise_for_status()
+        if not response.ok:
+            log.error(
+                "Seedream request failed: model=%s size=%s status=%s body=%s",
+                self.model,
+                payload.get("size"),
+                response.status_code,
+                response.text[:500],
+            )
+            raise RuntimeError(
+                f"Seedream request failed: status={response.status_code}, body={response.text[:500]}"
+            )
         return response.json()
 
     def generate(
