@@ -39,11 +39,21 @@ def _env_bool(key: str, default: bool = False) -> bool:
     return default
 
 
-def _env_list(key: str, default: Optional[List[str]] = None) -> List[str]:
+def _env_list(key: str, default: List[str]) -> List[str]:
     raw = os.getenv(key)
     if not raw:
-        return list(default or [])
-    return [item.strip() for item in raw.split(",") if item.strip()]
+        return default
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def _resolve_project_path(value: str) -> str:
+    """Return an absolute path: if `value` is absolute use it, else resolve
+    relative to PROJECT_ROOT so things work no matter what cwd the script
+    was launched from."""
+    p = Path(value)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p
+    return str(p)
 
 
 @dataclass(frozen=True)
@@ -149,12 +159,16 @@ class HackerNewsConfig:
 class YouTubeConfig:
     enabled: bool = field(default_factory=lambda: _env_bool("YOUTUBE_ENABLED", False))
     client_secrets_file: str = field(
-        default_factory=lambda: _env("YOUTUBE_CLIENT_SECRETS", "youtube-client-secrets.json")
-        or "youtube-client-secrets.json"
+        default_factory=lambda: _resolve_project_path(
+            _env("YOUTUBE_CLIENT_SECRETS", "youtube-client-secrets.json")
+            or "youtube-client-secrets.json"
+        )
     )
     token_file: str = field(
-        default_factory=lambda: _env("YOUTUBE_TOKEN_FILE", "youtube-token.json")
-        or "youtube-token.json"
+        default_factory=lambda: _resolve_project_path(
+            _env("YOUTUBE_TOKEN_FILE", "youtube-token.json")
+            or "youtube-token.json"
+        )
     )
     privacy: str = field(default_factory=lambda: _env("YOUTUBE_PRIVACY", "public") or "public")
     category_id: str = field(default_factory=lambda: _env("YOUTUBE_CATEGORY_ID", "28") or "28")
@@ -169,7 +183,9 @@ class DistributionFlags:
     telegram: bool = field(default_factory=lambda: _env_bool("DIST_TELEGRAM", True))
     discord: bool = field(default_factory=lambda: _env_bool("DIST_DISCORD", True))
     nostr: bool = field(default_factory=lambda: _env_bool("DIST_NOSTR", True))
-    hashnode: bool = field(default_factory=lambda: _env_bool("DIST_HASHNODE", True))
+    # Hashnode default-off: their spam filter is aggressive against
+    # auto-cross-posted AI content and ban appeals rarely succeed.
+    hashnode: bool = field(default_factory=lambda: _env_bool("DIST_HASHNODE", False))
     reddit: bool = field(default_factory=lambda: _env_bool("DIST_REDDIT", False))
     hackernews: bool = field(default_factory=lambda: _env_bool("DIST_HACKERNEWS", True))
     youtube_shorts: bool = field(default_factory=lambda: _env_bool("DIST_YOUTUBE_SHORTS", False))

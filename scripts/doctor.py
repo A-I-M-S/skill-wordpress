@@ -389,7 +389,6 @@ CHECKS: List[tuple[str, Callable[[], tuple[str, str]]]] = [
     ("facebook",   check_facebook),
     ("bluesky",    check_bluesky),
     ("nostr",      check_nostr),
-    ("hashnode",   check_hashnode),
     ("reddit",     check_reddit),
     ("hn",         check_hn),
     ("indexnow",   check_indexnow),
