@@ -247,14 +247,30 @@ def check_hashnode() -> tuple[str, str]:
     pub = os.getenv("HASHNODE_PUBLICATION_ID")
     if not token:
         return SKIP, "HASHNODE_TOKEN not set"
-    r = requests.post(
-        "https://gql.hashnode.com/",
-        headers={"Authorization": token, "Content-Type": "application/json"},
-        json={"query": "{ me { id username } }"},
-        timeout=15,
-    )
-    r.raise_for_status()
-    payload = r.json()
+
+    url = "https://gql.hashnode.com"
+    query = {"query": "{ me { id username } }"}
+
+    def _attempt(auth_value: str) -> tuple[int, str, Optional[dict]]:
+        r = requests.post(
+            url,
+            headers={"Authorization": auth_value, "Content-Type": "application/json"},
+            json=query,
+            timeout=15,
+        )
+        try:
+            body = r.json()
+        except json.JSONDecodeError:
+            body = None
+        return r.status_code, r.text[:150], body
+
+    status, body, payload = _attempt(token)
+    if status == 401:
+        status, body, payload = _attempt(f"Bearer {token}")
+    if status != 200:
+        return FAIL, f"HTTP {status}: {body}"
+    if not payload:
+        return FAIL, "empty 200 response"
     if payload.get("errors"):
         return FAIL, f"GraphQL error: {payload['errors'][0].get('message')}"
     me = payload.get("data", {}).get("me", {})
@@ -303,7 +319,7 @@ def check_youtube() -> tuple[str, str]:
     cfg = settings.youtube
     if not cfg.enabled:
         return SKIP, "YOUTUBE_ENABLED=false"
-    secrets = Path(cfg.client_secrets)
+    secrets = Path(cfg.client_secrets_file)
     if not secrets.exists():
         return FAIL, f"client secrets not found: {secrets}"
     try:
