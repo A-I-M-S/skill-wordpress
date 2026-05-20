@@ -64,7 +64,7 @@ def _pick_post(state: dict, n_recent: int = 50) -> Optional[dict]:
     cfg = settings.wp
     resp = requests.get(
         f"{cfg.api_base}/posts",
-        params={"per_page": n_recent, "_fields": "id,link,title,excerpt,tags"},
+        params={"per_page": n_recent, "_embed": 1},
         timeout=30,
     )
     resp.raise_for_status()
@@ -75,6 +75,17 @@ def _pick_post(state: dict, n_recent: int = 50) -> Optional[dict]:
         log.info("shorts.no_candidates — all recent posts already have a Short")
         return None
     return random.choice(candidates)
+
+
+def _hero_image_url(wp_post: dict) -> Optional[str]:
+    """Extract the featured-media URL from a WP post fetched with _embed=1."""
+    try:
+        media = (wp_post.get("_embedded") or {}).get("wp:featuredmedia") or []
+        if media and isinstance(media, list):
+            return (media[0] or {}).get("source_url")
+    except Exception:
+        pass
+    return None
 
 
 def _to_payload(wp_post: dict) -> PostPayload:
@@ -111,12 +122,13 @@ def main() -> int:
         return 0
 
     if args.url:
-        resp = requests.get(args.url, headers={"Accept": "application/json"}, timeout=30)
+        sep = "&" if "?" in args.url else "?"
+        resp = requests.get(f"{args.url}{sep}_embed=1", headers={"Accept": "application/json"}, timeout=30)
         wp_post = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else None
         if not wp_post:
             # Fall back to slug lookup
             slug = args.url.rstrip("/").rsplit("/", 1)[-1]
-            r2 = requests.get(f"{settings.wp.api_base}/posts", params={"slug": slug}, timeout=30)
+            r2 = requests.get(f"{settings.wp.api_base}/posts", params={"slug": slug, "_embed": 1}, timeout=30)
             r2.raise_for_status()
             arr = r2.json()
             if not arr:
@@ -142,7 +154,9 @@ def main() -> int:
         from openclaw import config as _config
         reload(_config)
 
-    url = youtube_shorts.post(payload)
+    hero_url = _hero_image_url(wp_post)
+    log.info("shorts.hero %s", hero_url or "(none — falling back to text-to-video)")
+    url = youtube_shorts.post(payload, hero_image_url=hero_url)
     state.setdefault("shorts", []).append({
         "wp_url": payload.url,
         "wp_title": payload.title,
