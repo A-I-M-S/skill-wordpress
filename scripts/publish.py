@@ -38,6 +38,7 @@ from openclaw.indexing import submit_bing, submit_indexnow  # noqa: E402
 from openclaw.llm import LLMClient  # noqa: E402
 from openclaw.article_builder import build_article  # noqa: E402
 from openclaw.original_assets import enhance as enhance_with_asset  # noqa: E402
+from openclaw.internal_linker import link as enhance_with_links  # noqa: E402
 from openclaw.logging_utils import log  # noqa: E402
 from openclaw.keywords import fetch_trending_topic  # noqa: E402
 from openclaw.topic_filter import is_safe_topic  # noqa: E402
@@ -103,6 +104,12 @@ def main() -> int:
 
     article = build_article(topic)
     article.content = enhance_with_asset(article.content, article.title)
+    article.content = enhance_with_links(
+        article.content,
+        title=article.title,
+        tags=article.tags,
+        category_id=category['id'],
+    )
     log.info("publish.generated words=%d title=%r", len(__import__("re").sub(r"<[^>]+>", " ", article.content).split()), article.title)
 
     if args.dry_run:

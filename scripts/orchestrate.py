@@ -40,6 +40,8 @@ PUBLISH_HOURS = {4, 10, 16, 22}
 SHORTS_HOUR = 20
 WEEKLY_REFRESH_HOUR = 4
 WEEKLY_REFRESH_WEEKDAY = 0  # 0 = Monday
+WEEKLY_REFRESH_LOW_CTR_HOUR = 5
+WEEKLY_REFRESH_LOW_CTR_WEEKDAY = 1  # 1 = Tuesday
 
 
 def _plan(now: datetime) -> list[tuple[str, list[str]]]:
@@ -49,6 +51,8 @@ def _plan(now: datetime) -> list[tuple[str, list[str]]]:
 
     if hour == WEEKLY_REFRESH_HOUR and now.weekday() == WEEKLY_REFRESH_WEEKDAY:
         jobs.append(("refresh_keywords", ["refresh_keywords.py"]))
+    if hour == WEEKLY_REFRESH_LOW_CTR_HOUR and now.weekday() == WEEKLY_REFRESH_LOW_CTR_WEEKDAY:
+        jobs.append(("refresh_low_ctr", ["refresh_low_ctr.py"]))
 
     if hour in PUBLISH_HOURS:
         jobs.append(("publish", ["publish.py"]))
