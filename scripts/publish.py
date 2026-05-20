@@ -36,6 +36,8 @@ from openclaw.distribution import (  # noqa: E402
 from openclaw.distribution.base import PostPayload  # noqa: E402
 from openclaw.indexing import submit_bing, submit_indexnow  # noqa: E402
 from openclaw.llm import LLMClient  # noqa: E402
+from openclaw.article_builder import build_article  # noqa: E402
+from openclaw.original_assets import enhance as enhance_with_asset  # noqa: E402
 from openclaw.logging_utils import log  # noqa: E402
 from openclaw.keywords import fetch_trending_topic  # noqa: E402
 from openclaw.topic_filter import is_safe_topic  # noqa: E402
@@ -99,7 +101,8 @@ def main() -> int:
         log.error("publish.aborted reason=topic_filter_failed")
         return 1
 
-    article = LLMClient().generate_article(topic)
+    article = build_article(topic)
+    article.content = enhance_with_asset(article.content, article.title)
     log.info("publish.generated words=%d title=%r", len(__import__("re").sub(r"<[^>]+>", " ", article.content).split()), article.title)
 
     if args.dry_run:
