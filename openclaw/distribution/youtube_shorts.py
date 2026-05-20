@@ -57,22 +57,52 @@ def post(
         script = _build_short_script(payload)
         log.info("shorts.script len=%d", len(script))
 
-        video = _generate_video(payload, hero_image_url, out_dir, script=script)
-        log.info("shorts.video generated path=%s", video.path)
+        wants_native_audio = settings.seedance.generate_audio
+        video_path, used_native_audio = _generate_video_with_audio_fallback(
+            payload, hero_image_url, out_dir, prefer_native_audio=wants_native_audio,
+        )
+        log.info("shorts.video generated path=%s native_audio=%s",
+                 video_path, used_native_audio)
 
-        if settings.seedance.generate_audio:
-            # Seedance produced an mp4 with audio already baked in.
-            final = video.path
+        if used_native_audio:
+            final = video_path
             log.info("shorts.audio source=seedance_native (skipping edge-tts)")
         else:
             audio = _generate_narration(script, out_dir, narration_voice)
-            final = _mux(video, audio, out_dir)
+            final = _mux(video_path, audio, out_dir)
             log.info("shorts.composed path=%s", final)
 
         return _upload_to_youtube(final, payload, script)
     except Exception as exc:
         log.warning("shorts.fail err=%s", exc)
         return None
+
+
+def _generate_video_with_audio_fallback(
+    payload: PostPayload,
+    hero_image_url: Optional[str],
+    out_dir: Path,
+    *,
+    prefer_native_audio: bool,
+) -> tuple[Path, bool]:
+    """Try native audio first. On ByteDance's OutputAudioSensitiveContentDetected
+    (or any 'audio' + 'sensitive' moderation hit), retry once with audio
+    disabled. Returns (video_path, used_native_audio)."""
+    try:
+        path = _generate_video(payload, hero_image_url, out_dir,
+                               generate_audio=prefer_native_audio if prefer_native_audio else False)
+        return path, prefer_native_audio
+    except RuntimeError as exc:
+        err = str(exc).lower()
+        is_audio_moderation = (
+            "outputaudiosensitivecontentdetected" in err
+            or ("audio" in err and "sensitive" in err)
+        )
+        if not (prefer_native_audio and is_audio_moderation):
+            raise
+        log.warning("shorts.audio_moderation_retry reason=%s", exc)
+        path = _generate_video(payload, hero_image_url, out_dir, generate_audio=False)
+        return path, False
 
 
 # ---- script generation ----------------------------------------------------
@@ -101,15 +131,21 @@ def _generate_video(
     hero_image_url: Optional[str],
     out_dir: Path,
     script: Optional[str] = None,
+    *,
+    generate_audio: Optional[bool] = None,
 ) -> Path:
     client = SeedanceClient()
     prompt = build_shorts_prompt(payload.title, payload.excerpt[:200])
     if hero_image_url:
-        log.info("shorts.seedance mode=i2v hero=%s", hero_image_url)
-        video = client.image_to_video(prompt, hero_image_url, out_dir=out_dir)
+        log.info("shorts.seedance mode=i2v hero=%s audio=%s", hero_image_url, generate_audio)
+        video = client.image_to_video(
+            prompt, hero_image_url, out_dir=out_dir, generate_audio=generate_audio,
+        )
     else:
-        log.info("shorts.seedance mode=t2v")
-        video = client.text_to_video(prompt, out_dir=out_dir)
+        log.info("shorts.seedance mode=t2v audio=%s", generate_audio)
+        video = client.text_to_video(
+            prompt, out_dir=out_dir, generate_audio=generate_audio,
+        )
     return video.path
 
 

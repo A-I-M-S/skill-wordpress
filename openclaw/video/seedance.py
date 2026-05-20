@@ -67,9 +67,10 @@ class SeedanceClient:
         prompt: str,
         *,
         out_dir: Optional[Path] = None,
+        generate_audio: Optional[bool] = None,
     ) -> SeedanceVideo:
         """Generate a video from a text prompt and return the local mp4 path."""
-        payload = self._payload(content=[{"type": "text", "text": prompt.strip()}])
+        payload = self._payload(content=[{"type": "text", "text": prompt.strip()}], generate_audio=generate_audio)
         task_id = self._submit(payload)
         video_url = self._poll(task_id)
         return self._download(task_id, video_url, prompt, out_dir)
@@ -80,6 +81,7 @@ class SeedanceClient:
         image_url: str,
         *,
         out_dir: Optional[Path] = None,
+        generate_audio: Optional[bool] = None,
     ) -> SeedanceVideo:
         """Animate an existing image (e.g. a Seedream hero) into a video."""
         payload = self._payload(content=[
@@ -89,17 +91,17 @@ class SeedanceClient:
                 "image_url": {"url": image_url},
                 "role": "reference_image",
             },
-        ])
+        ], generate_audio=generate_audio)
         task_id = self._submit(payload)
         video_url = self._poll(task_id)
         return self._download(task_id, video_url, prompt, out_dir)
 
     # ---- internals ----
-    def _payload(self, content: list[dict]) -> dict:
+    def _payload(self, content: list[dict], generate_audio: Optional[bool] = None) -> dict:
         return {
             "model": self.model,
             "content": content,
-            "generate_audio": self.generate_audio,
+            "generate_audio": generate_audio if generate_audio is not None else self.generate_audio,
             "ratio": self.ratio,
             "duration": self.duration,
             "watermark": self.watermark,

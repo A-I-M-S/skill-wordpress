@@ -89,14 +89,14 @@ def main() -> int:
 
     topic = fetch_trending_topic(category["name"])
     article = LLMClient().generate_article(topic)
-    log.info("publish.generated words=%d title=%r", len(article.content.split()), article.title)
+    log.info("publish.generated words=%d title=%r", len(__import__("re").sub(r"<[^>]+>", " ", article.content).split()), article.title)
 
     if args.dry_run:
         print(json.dumps({
             "title": article.title,
             "excerpt": article.excerpt,
             "tags": article.tags,
-            "word_count": len(article.content.split()),
+            "word_count": len(__import__("re").sub(r"<[^>]+>", " ", article.content).split()),
         }, indent=2))
         return 0
 
