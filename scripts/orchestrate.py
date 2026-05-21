@@ -38,6 +38,7 @@ TZ = ZoneInfo(os.getenv("ORCHESTRATOR_TZ", "Asia/Singapore"))
 
 PUBLISH_HOURS = {4, 10, 16, 22}
 SHORTS_HOUR = 20
+CLEANUP_HOUR = 3      # local; deletes artifact mp4/mp3/png older than 24h
 WEEKLY_REFRESH_HOUR = 4
 WEEKLY_REFRESH_WEEKDAY = 0  # 0 = Monday
 WEEKLY_REFRESH_LOW_CTR_HOUR = 5
@@ -54,6 +55,8 @@ def _plan(now: datetime) -> list[tuple[str, list[str]]]:
     if hour == WEEKLY_REFRESH_LOW_CTR_HOUR and now.weekday() == WEEKLY_REFRESH_LOW_CTR_WEEKDAY:
         jobs.append(("refresh_low_ctr", ["refresh_low_ctr.py"]))
 
+    if hour == CLEANUP_HOUR:
+        jobs.append(("cleanup", ["cleanup.py"]))
     if hour in PUBLISH_HOURS:
         jobs.append(("publish", ["publish.py"]))
     elif hour == SHORTS_HOUR:
