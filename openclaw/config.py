@@ -192,6 +192,11 @@ class DistributionFlags:
     reddit: bool = field(default_factory=lambda: _env_bool("DIST_REDDIT", False))
     hackernews: bool = field(default_factory=lambda: _env_bool("DIST_HACKERNEWS", True))
     youtube_shorts: bool = field(default_factory=lambda: _env_bool("DIST_YOUTUBE_SHORTS", False))
+    instagram_reels: bool = field(default_factory=lambda: _env_bool("DIST_INSTAGRAM_REELS", False))
+    facebook_reels: bool = field(default_factory=lambda: _env_bool("DIST_FACEBOOK_REELS", False))
+    linkedin_video: bool = field(default_factory=lambda: _env_bool("DIST_LINKEDIN_VIDEO", False))
+    threads_video: bool = field(default_factory=lambda: _env_bool("DIST_THREADS_VIDEO", False))
+    tiktok_draft: bool = field(default_factory=lambda: _env_bool("DIST_TIKTOK_DRAFT", False))
     # OFF by default — duplicate content footgun.
     wordpress_com_mirror: bool = field(default_factory=lambda: _env_bool("DIST_WP_COM", False))
     # OFF by default — high ban risk.

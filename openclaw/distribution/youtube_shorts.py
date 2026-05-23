@@ -73,7 +73,9 @@ def post(
             final = _mux(video_path, audio, out_dir)
             log.info("shorts.composed path=%s", final)
 
-        return _upload_to_youtube(final, payload, script)
+        youtube_url = _upload_to_youtube(final, payload, script)
+        fan_out_video_distribution(payload, final)
+        return youtube_url
     except Exception as exc:
         log.warning("shorts.fail err=%s", exc)
         return None
@@ -263,3 +265,38 @@ def _upload_to_youtube(mp4: Path, payload: PostPayload, script: str) -> Optional
     url = f"https://www.youtube.com/shorts/{video_id}"
     log.info("shorts.uploaded url=%s", url)
     return url
+
+
+# ---- fan-out to other video platforms ------------------------------------
+
+def fan_out_video_distribution(payload: PostPayload, mp4_path: Path) -> None:
+    """Post the same mp4 to every enabled video platform. Each in its own
+    try/except so a single failure never blocks the others."""
+    flags = settings.distribution
+    targets = []
+    if flags.instagram_reels:
+        from . import instagram_reels
+        targets.append(("instagram_reels", instagram_reels.post_video))
+    if flags.facebook_reels:
+        from . import facebook_reels
+        targets.append(("facebook_reels", facebook_reels.post_video))
+    if flags.linkedin_video:
+        from . import linkedin_video
+        targets.append(("linkedin_video", linkedin_video.post_video))
+    if flags.threads_video:
+        from . import threads_video
+        targets.append(("threads_video", threads_video.post_video))
+    if flags.tiktok_draft:
+        from . import tiktok_draft
+        targets.append(("tiktok_draft", tiktok_draft.post_video))
+
+    if not targets:
+        log.info("shorts.fanout skip reason=no_video_platforms_enabled")
+        return
+
+    log.info("shorts.fanout starting platforms=%d", len(targets))
+    for name, fn in targets:
+        try:
+            fn(payload, mp4_path)
+        except Exception as exc:
+            log.warning("shorts.fanout %s err=%s", name, exc)
