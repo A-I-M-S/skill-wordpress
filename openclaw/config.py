@@ -56,6 +56,33 @@ def _resolve_project_path(value: str) -> str:
     return str(p)
 
 
+
+
+@dataclass(frozen=True)
+class ComposioConfig:
+    api_key: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_API_KEY"))
+    user_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_USER_ID"))
+    base_url: str = field(default_factory=lambda: _env("COMPOSIO_BASE_URL", "https://backend.composio.dev/api/v3.1") or "https://backend.composio.dev/api/v3.1")
+    gsc_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_GSC_ACCOUNT_ID"))
+    reddit_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_REDDIT_ACCOUNT_ID"))
+    google_analytics_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_GOOGLE_ANALYTICS_ACCOUNT_ID"))
+    google_sheets_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_GOOGLESHEETS_ACCOUNT_ID"))
+    google_drive_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_GOOGLEDRIVE_ACCOUNT_ID"))
+    google_docs_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_GOOGLEDOCS_ACCOUNT_ID"))
+    linkedin_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_LINKEDIN_ACCOUNT_ID"))
+    facebook_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_FACEBOOK_ACCOUNT_ID"))
+    youtube_account_id: Optional[str] = field(default_factory=lambda: _env("COMPOSIO_YOUTUBE_ACCOUNT_ID"))
+    gsc_site_url: str = field(default_factory=lambda: _env("GSC_SITE_URL", "https://insightginie.com/") or "https://insightginie.com/")
+    ga4_property: Optional[str] = field(default_factory=lambda: _env("GA4_PROPERTY", "properties/486401787"))
+    growth_sheet_id: Optional[str] = field(default_factory=lambda: _env("GROWTH_SHEET_ID"))
+    linkedin_author_urn: Optional[str] = field(default_factory=lambda: _env("LINKEDIN_AUTHOR_URN"))
+    facebook_page_id: Optional[str] = field(default_factory=lambda: _env("FACEBOOK_PAGE_ID"))
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key and self.user_id)
+
+
 @dataclass(frozen=True)
 class WordPressConfig:
     host: str = field(default_factory=lambda: _env("WP_HOST", "") or "")
@@ -129,15 +156,7 @@ class SeedanceConfig:
 
 @dataclass(frozen=True)
 class RedditConfig:
-    client_id: Optional[str] = field(default_factory=lambda: _env("REDDIT_CLIENT_ID"))
-    client_secret: Optional[str] = field(default_factory=lambda: _env("REDDIT_CLIENT_SECRET"))
-    username: Optional[str] = field(default_factory=lambda: _env("REDDIT_USERNAME"))
-    password: Optional[str] = field(default_factory=lambda: _env("REDDIT_PASSWORD"))
-    user_agent: str = field(
-        default_factory=lambda: _env("REDDIT_USER_AGENT", "openclaw-bot:v0.2 (by /u/aloycwl)")
-    )
-    # Allowlist: only post to subs you actually moderate or that explicitly permit self-promo.
-    # Posting to broad subs without prior karma will shadowban. Start small.
+    # Composio OAuth handles Reddit auth; these settings only control safety.
     allowed_subs: List[str] = field(
         default_factory=lambda: _env_list("REDDIT_ALLOWED_SUBS", ["u_aloycwl"])
     )
@@ -231,6 +250,7 @@ class PublishingConfig:
 
 @dataclass(frozen=True)
 class Settings:
+    composio: ComposioConfig = field(default_factory=ComposioConfig)
     wp: WordPressConfig = field(default_factory=WordPressConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     seedream: SeedreamConfig = field(default_factory=SeedreamConfig)

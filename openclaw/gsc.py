@@ -1,27 +1,7 @@
 """Google Search Console integration — find your highest-leverage pages.
 
-Two modes:
-
-  1. PROPER MODE (GSC configured) — pulls queries+pages where you have
-     impressions but low CTR/position, scoring as "almost ranking,
-     small push wins." These are your 80/20 traffic wins.
-
-  2. FALLBACK MODE (no GSC) — uses just the WP API to find posts that
-     are 7-30 days old (in Google's discovery+evaluation window) and
-     haven't been re-promoted recently. Less precise but still useful.
-
-GSC auth setup (one-time):
-  1. https://console.cloud.google.com -> select project -> enable
-     "Google Search Console API"
-  2. APIs & Services -> Credentials -> Create credentials ->
-     Service Account. Download the JSON key.
-  3. Save the JSON as gsc-service-account.json at the project root
-     (path overridable via GSC_SERVICE_ACCOUNT_FILE).
-  4. In Search Console, add the service-account email
-     (xyz@project.iam.gserviceaccount.com) as a User with
-     'Restricted' access on the property.
-  5. Set GSC_SITE_URL to the verified property URL (with trailing
-     slash for sc-domain: properties or full URL for URL-prefix).
+Preferred mode uses Composio OAuth, so there is no Google service-account JSON
+in this repo. Legacy service-account mode remains as a fallback.
 """
 from __future__ import annotations
 
@@ -32,6 +12,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 
 from .config import PROJECT_ROOT, settings
+from .composio_client import ComposioClient, available as composio_available
 from .logging_utils import log
 
 
@@ -87,22 +68,72 @@ def _gsc_service():
     return build("searchconsole", "v1", credentials=creds, cache_discovery=False)
 
 
+def _rows_to_opportunities(rows: list[dict]) -> list[Opportunity]:
+    opps: list[Opportunity] = []
+    for row in rows:
+        keys = row.get("keys", [])
+        if len(keys) < 2:
+            continue
+        page, query = keys[0], keys[1]
+        opps.append(Opportunity(
+            page=page,
+            query=query,
+            impressions=int(row.get("impressions", 0)),
+            clicks=int(row.get("clicks", 0)),
+            ctr=float(row.get("ctr", 0.0)),
+            position=float(row.get("position", 100.0)),
+        ))
+    return opps
+
+
+def list_sites() -> list[dict]:
+    if composio_available() and settings.composio.gsc_account_id:
+        result = ComposioClient().execute(
+            "GOOGLE_SEARCH_CONSOLE_LIST_SITES",
+            connected_account_id=settings.composio.gsc_account_id,
+        )
+        if result.successful:
+            return result.data.get("siteEntry", []) if isinstance(result.data, dict) else []
+        log.warning("gsc.composio_list_sites err=%s", result.error)
+    return []
+
+
 def fetch_opportunities(
     *,
     site_url: Optional[str] = None,
     lookback_days: int = 28,
     row_limit: int = 200,
 ) -> List[Opportunity]:
-    site_url = site_url or os.getenv("GSC_SITE_URL")
+    site_url = site_url or settings.composio.gsc_site_url or os.getenv("GSC_SITE_URL")
     if not site_url:
         log.info("gsc.skip reason=no_site_url")
         return []
+
+    end = date.today() - timedelta(days=2)
+    start = end - timedelta(days=lookback_days)
+
+    if composio_available() and settings.composio.gsc_account_id:
+        result = ComposioClient().execute(
+            "GOOGLE_SEARCH_CONSOLE_SEARCH_ANALYTICS_QUERY",
+            connected_account_id=settings.composio.gsc_account_id,
+            arguments={
+                "site_url": site_url,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "dimensions": ["page", "query"],
+                "row_limit": row_limit,
+                "data_state": "all",
+            },
+        )
+        if result.successful and isinstance(result.data, dict):
+            opps = _rows_to_opportunities(result.data.get("rows", []))
+            log.info("gsc.composio_fetched n=%d range=%s..%s", len(opps), start, end)
+            return opps
+        log.warning("gsc.composio_query_err err=%s", result.error)
+
     svc = _gsc_service()
     if not svc:
         return []
-
-    end = date.today() - timedelta(days=2)  # GSC lags ~2 days
-    start = end - timedelta(days=lookback_days)
 
     body = {
         "startDate": start.isoformat(),
@@ -118,17 +149,7 @@ def fetch_opportunities(
         log.warning("gsc.query_err err=%s", exc)
         return []
 
-    opps: list[Opportunity] = []
-    for row in resp.get("rows", []):
-        page, query = row["keys"]
-        opps.append(Opportunity(
-            page=page,
-            query=query,
-            impressions=int(row.get("impressions", 0)),
-            clicks=int(row.get("clicks", 0)),
-            ctr=float(row.get("ctr", 0.0)),
-            position=float(row.get("position", 100.0)),
-        ))
+    opps = _rows_to_opportunities(resp.get("rows", []))
     log.info("gsc.fetched n=%d range=%s..%s", len(opps), start, end)
     return opps
 
@@ -140,6 +161,8 @@ def top_refresh_candidates(n: int = 5) -> List[Opportunity]:
     by_page: dict[str, Opportunity] = {}
     # Dedup by page — keep the best-scoring query per page
     for o in opps:
+        if o.score <= 0 or o.page.rstrip("/") == (settings.composio.gsc_site_url or "").rstrip("/"):
+            continue
         if o.page not in by_page:
             by_page[o.page] = o
     top = list(by_page.values())[:n]
@@ -152,4 +175,6 @@ def top_refresh_candidates(n: int = 5) -> List[Opportunity]:
 
 
 def is_available() -> bool:
+    if composio_available() and settings.composio.gsc_account_id and settings.composio.gsc_site_url:
+        return True
     return bool(os.getenv("GSC_SITE_URL")) and _gsc_service_account_path() is not None

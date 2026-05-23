@@ -4,11 +4,16 @@ import os
 
 import requests
 
+from ..composio_client import available as composio_available
+from ..config import settings
 from ..logging_utils import log
+from . import composio_linkedin
 from .base import PostPayload
 
 
 def post(payload: PostPayload) -> None:
+    if composio_available() and settings.composio.linkedin_account_id:
+        return composio_linkedin.post(payload)
     token = os.getenv("LINKEDIN_TOKEN")
     author = os.getenv("LINKEDIN_AUTHOR")
     if not (token and author):

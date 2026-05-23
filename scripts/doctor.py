@@ -281,25 +281,13 @@ def check_hashnode() -> tuple[str, str]:
 
 
 def check_reddit() -> tuple[str, str]:
-    cfg = settings.reddit
-    if not (cfg.client_id and cfg.client_secret and cfg.username and cfg.password):
-        return SKIP, "Reddit credentials not set (see Responsible Builder Policy)"
-    try:
-        import praw  # type: ignore
-    except ImportError:
-        return FAIL, "praw not installed — pip install praw"
-    reddit = praw.Reddit(
-        client_id=cfg.client_id,
-        client_secret=cfg.client_secret,
-        username=cfg.username,
-        password=cfg.password,
-        user_agent=cfg.user_agent,
-        check_for_async=False,
-    )
-    me = reddit.user.me()
-    if me is None:
-        return FAIL, "Auth returned None — likely 2FA enabled or app not 'script' type"
-    return OK, f"user=u/{me.name} karma={me.link_karma + me.comment_karma} allowed={cfg.allowed_subs}"
+    if not settings.distribution.reddit:
+        return SKIP, "DIST_REDDIT=false"
+    if not settings.composio.reddit_account_id:
+        return SKIP, "COMPOSIO_REDDIT_ACCOUNT_ID not set"
+    if not settings.reddit.allowed_subs:
+        return FAIL, "REDDIT_ALLOWED_SUBS is empty"
+    return OK, f"Composio Reddit configured; allowed={settings.reddit.allowed_subs}"
 
 
 def check_indexnow() -> tuple[str, str]:

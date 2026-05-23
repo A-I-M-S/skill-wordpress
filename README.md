@@ -1,60 +1,99 @@
-# OpenClaw — SEO Autoblogging & Distribution Engine (v0.3)
+# OpenClaw — WordPress SEO Growth Engine
 
-Automated SEO content generation, WordPress publishing, and multi-channel distribution — restructured for maintainability, with **strict velocity guardrails** to stay on the right side of Google's Helpful Content / scaled-content policies.
+Automated SEO content generation, WordPress publishing, Search Console refreshes, analytics feedback, and safe multi-channel distribution for InsightGinie.
 
-> ⚠️ **Velocity rule:** the legacy version ran every 15 minutes (96 posts/day). That is a textbook scaled-content-abuse signal and the single biggest reason an autoblog gets demoted in Google. v0.2+ hard-caps publishing to **4 posts/day** with a **4-hour minimum interval** — change `MAX_POSTS_PER_DAY` only when you have topical authority established.
+OpenClaw is intentionally conservative: it prioritizes improving existing pages and promoting useful answers over high-volume autopublishing. That is the safer path under Google's helpful-content and scaled-content policies.
 
-**What's new in v0.3:** every YouTube Short is now also fanned out to Instagram Reels, Facebook Reels, LinkedIn native video, Threads video, and TikTok (draft or direct-post) — one mp4, six platforms. See [Video fan-out](#video-fan-out-reels--tiktok--linkedin--threads) below.
+---
+
+## Core workflows
+
+| Workflow | Command | Purpose |
+|---|---|---|
+| Hourly orchestrator | `python3 scripts/orchestrate.py` | Cron entrypoint; decides what should run this hour. |
+| Publish one new post | `python3 scripts/publish.py` | Generate, SEO-enrich, publish to WordPress, then distribute. |
+| Promote existing post | `python3 scripts/promote.py` | Re-share an existing article without creating new content. |
+| Refresh low-CTR pages | `python3 -m scripts.refresh_low_ctr` | Use Search Console opportunities to improve existing posts. |
+| SEO dashboard sync | `python3 -m scripts.growth_dashboard` | Write GSC, GA4, and referral data into Google Sheets. |
+| Shorts pipeline | `python3 scripts/shorts.py` | Create and upload short-form video when enabled. |
+| Health checks | `python3 scripts/doctor.py` | Validate credentials and integration readiness. |
+
+---
+
+## Composio-first integrations
+
+Composio OAuth is the preferred integration layer for tools that otherwise require fragile app credentials.
+
+Currently wired:
+
+- Google Search Console — query/page opportunities, URL inspection, sitemap signals.
+- Google Analytics 4 — page and referral performance.
+- Google Sheets — SEO growth dashboard.
+- Reddit — OAuth posting through Composio; no internal Reddit app keys needed.
+- LinkedIn — Composio URL/article shares when configured.
+- Facebook — Composio Page posts when configured.
+- Google Drive / Docs / YouTube — connected for future workflows.
+
+Required Composio env vars:
+
+```env
+COMPOSIO_API_KEY=
+COMPOSIO_USER_ID=
+COMPOSIO_GSC_ACCOUNT_ID=
+COMPOSIO_REDDIT_ACCOUNT_ID=
+COMPOSIO_GOOGLE_ANALYTICS_ACCOUNT_ID=
+COMPOSIO_GOOGLESHEETS_ACCOUNT_ID=
+COMPOSIO_LINKEDIN_ACCOUNT_ID=
+COMPOSIO_FACEBOOK_ACCOUNT_ID=
+GSC_SITE_URL=https://insightginie.com/
+GA4_PROPERTY=properties/486401787
+GROWTH_SHEET_ID=
+LINKEDIN_AUTHOR_URN=
+FACEBOOK_PAGE_ID=
+```
+
+Reddit no longer needs `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, or `REDDIT_PASSWORD`. Keep only the safety controls:
+
+```env
+DIST_REDDIT=false
+REDDIT_ALLOWED_SUBS=u_aloycwl
+REDDIT_MIN_INTERVAL_MIN=240
+```
+
+Leave `DIST_REDDIT=false` until the target communities are manually reviewed. When enabled, the code posts text-first Reddit submissions with a source link and UTM tracking, not blind link drops.
 
 ---
 
 ## Project layout
 
-```
+```text
 skill-wordpress/
-├── openclaw/                 # main package
-│   ├── config.py             # all env vars + Settings dataclass
-│   ├── llm.py                # OpenRouter client with fallback chain
-│   ├── seo.py                # dedup, internal links, E-E-A-T injection, schema
-│   ├── trends.py             # DuckDuckGo trending topic
-│   ├── indexing.py           # IndexNow + Bing
-│   ├── images/
-│   │   └── seedream.py       # ByteDance Seedream image gen
-│   ├── video/
-│   │   └── seedance.py       # ByteDance Seedance i2v (image → motion)
-│   ├── wordpress/
-│   │   ├── client.py         # WP REST API wrapper (tags, media, posts)
-│   │   └── publisher.py      # publish orchestration + quota guard
-│   └── distribution/
-│       ├── base.py           # PostPayload
-│       ├── linkedin.py / bluesky.py / threads.py / facebook.py
-│       ├── telegram.py / discord.py / nostr.py / hashnode.py
-│       ├── reddit.py            # PRAW with allowlist + cooldown
-│       ├── hackernews.py        # semi-auto via Telegram approval link
-│       ├── youtube_shorts.py    # Seedream → TTS → ffmpeg → YT upload
-│       ├── video_hosting.py     # NEW — uploads mp4 to WP, returns public URL
-│       ├── instagram_reels.py   # NEW — Meta Graph API, async container flow
-│       ├── facebook_reels.py    # NEW — Graph API resumable upload (3-step)
-│       ├── linkedin_video.py    # NEW — Posts/Assets API native video
-│       ├── threads_video.py     # NEW — Meta Threads video container
-│       └── tiktok_draft.py      # NEW — Content Posting API (draft or direct)
+├── openclaw/
+│   ├── config.py                 # all env vars and typed settings
+│   ├── composio_client.py        # small Composio REST client
+│   ├── gsc.py                    # Search Console opportunities via Composio
+│   ├── analytics.py              # GA4 page/referral metrics via Composio
+│   ├── growth_sheet.py           # Google Sheets dashboard writer
+│   ├── article_builder.py        # research/write/polish article generation
+│   ├── seo.py                    # schema, internal links, E-E-A-T helpers
+│   ├── indexing.py               # IndexNow + Bing submission
+│   ├── wordpress/                # WordPress REST client and publisher
+│   ├── images/                   # Seedream image generation
+│   ├── video/                    # Seedance video generation
+│   └── distribution/             # social distribution modules
 ├── scripts/
-│   ├── orchestrate.py        # hourly orchestrator (use this in cron)
-│   ├── publish.py            # generate + publish + distribute (one post)
-│   ├── promote.py            # cross-promote an EXISTING post (no new content)
-│   ├── cleanup.py            # nightly artifact purge (03:00 SGT)
-│   └── fetch_categories.py
-├── data/
-│   ├── curated_categories.json  # ← edit this to your chosen niches
-│   ├── categories.full.json     # generated by fetch_categories.py
-│   └── keyword_used.json        # evergreen keyword dedup state
-├── artifacts/
-│   ├── seedream/             # generated hero/promo images
-│   ├── shorts/               # YouTube Short MP4s + voiceover
-│   ├── publish_state.json    # last-publish timestamps (velocity guard)
-│   └── shorts_state.json     # last-shorts timestamps (video fan-out guard)
-├── wordpress-automation.py   # legacy shim → scripts/publish.py
-├── socialMedia.py            # legacy shim → openclaw/distribution/*
+│   ├── orchestrate.py            # cron entrypoint
+│   ├── publish.py                # create and publish one new article
+│   ├── promote.py                # promote an existing article
+│   ├── refresh_low_ctr.py        # GSC-driven refresh workflow
+│   ├── growth_dashboard.py       # GSC + GA4 -> Google Sheets
+│   ├── cleanup.py                # artifact cleanup
+│   └── doctor.py                 # integration checks
+├── data/                         # categories and keyword state
+├── artifacts/                    # generated media and local state; ignored
+├── logs/                         # runtime logs; ignored
+├── wordpress-automation.py       # legacy shim
+├── socialMedia.py                # legacy shim
 ├── requirements.txt
 └── .env.sample
 ```
@@ -65,139 +104,102 @@ skill-wordpress/
 
 ```bash
 pip install -r requirements.txt
-cp .env.sample .env             # fill in keys
-python3 scripts/publish.py --dry-run   # verify generation works
-python3 scripts/publish.py             # publish + distribute
-python3 scripts/promote.py             # share an old post (no new content)
+cp .env.sample .env
+python3 scripts/doctor.py
+python3 scripts/orchestrate.py --what
+python3 -m scripts.growth_dashboard
+python3 scripts/publish.py --dry-run
 ```
 
----
-
-## Recommended cron
+The live cron uses the hourly orchestrator:
 
 ```cron
-# Hourly orchestrator — internally enforces the 4-post/day + 4-hour cap
-0 * * * *   cd /home/openclaw/skill-wordpress && /usr/bin/python3 scripts/orchestrate.py >> /home/openclaw/skill-wordpress/logs/wp.log 2>&1
+0 * * * * cd /home/openclaw/skill-wordpress && /usr/bin/python3 scripts/orchestrate.py >> /home/openclaw/skill-wordpress/logs/wp.log 2>&1
 ```
 
-`scripts/orchestrate.py` reads the current hour/weekday and decides what to run (new post, promote, YouTube Short, cleanup). Print the plan for the current hour without running it:
+Make sure `logs/` exists before cron runs.
+
+---
+
+## SEO strategy
+
+1. **Measure first** — Search Console finds pages with impressions but poor CTR/rank.
+2. **Refresh existing winners** — improve titles, meta descriptions, missing sections, and internal links.
+3. **Create selectively** — new posts stay capped by `MAX_POSTS_PER_DAY` and `MIN_MINUTES_BETWEEN_POSTS`.
+4. **Distribute carefully** — LinkedIn/Facebook/Bluesky/Threads/etc. are allowed; Reddit stays opt-in and allowlisted.
+5. **Track outcomes** — GA4 referrals and page metrics flow into the Google Sheet dashboard.
+
+Useful commands:
 
 ```bash
-python3 scripts/orchestrate.py --what
+python3 -m scripts.growth_dashboard --days 28 --gsc-limit 200
+python3 -m scripts.refresh_low_ctr --limit 3 --dry-run
+python3 -m scripts.refresh_low_ctr --limit 3
+python3 scripts/promote.py --url https://insightginie.com/example/
 ```
 
-Why one orchestrator: keeps all velocity and ordering decisions in one place — `publish.py` creates ≤4 new posts/day, `promote.py` re-shares your existing 8k posts (this is where traffic growth comes from), and the YouTube Short + video fan-out only fires after a successful publish.
-
 ---
 
-## ByteDance Seedream setup
+## Publishing guardrails
 
-1. Create an API key in BytePlus Ark (international) or Volcano Engine (CN).
-2. Set in `.env`:
-   ```
-   SEEDREAM_API_KEY=...
-   SEEDREAM_ENDPOINT=https://ark.ap-southeast.bytepluses.com/api/v3/images/generations
-   SEEDREAM_MODEL=seedream-3-0-t2i-250415
-   ```
-3. That's it — every new post and every promote run will use Seedream for the hero / promo image, falling back to the legacy media-ID roulette if Seedream fails.
-
----
-
-## YouTube Shorts pipeline
-
-1. Google Cloud Console → create OAuth desktop client → download JSON to `youtube-client-secrets.json`.
-2. `pip install google-api-python-client google-auth-oauthlib edge-tts`
-3. Make sure `ffmpeg` is on `PATH`.
-4. Set `YOUTUBE_ENABLED=true` and `DIST_YOUTUBE_SHORTS=true`.
-5. First run opens a browser for one-time auth, then caches token to `youtube-token.json`.
-
-Pipeline per post: Seedream produces a 9:16 hero → Seedance turns it into a motion clip → edge-tts narrates three beats → ffmpeg muxes a 35-second vertical MP4 → YouTube Data API uploads it. Cost per Short: roughly $0.01 in Seedream + Seedance + $0 in TTS.
-
----
-
-## Video fan-out (Reels / TikTok / LinkedIn / Threads)
-
-After the YouTube upload succeeds, `youtube_shorts.fan_out_video_distribution()` reposts the **same mp4** to every video platform enabled in `.env`. Each platform runs in its own try/except, so one bad token never blocks the others.
+Default settings:
 
 ```env
-DIST_INSTAGRAM_REELS=true
-DIST_FACEBOOK_REELS=true
-DIST_LINKEDIN_VIDEO=true
-DIST_THREADS_VIDEO=true
-DIST_TIKTOK_DRAFT=true
+MAX_POSTS_PER_DAY=4
+MIN_MINUTES_BETWEEN_POSTS=240
+TITLE_SIM_THRESHOLD=0.80
 ```
 
-| Platform        | API                                  | Auth reused from        | New env vars                                                                 |
-|-----------------|--------------------------------------|-------------------------|------------------------------------------------------------------------------|
-| Instagram Reels | Graph API async container flow       | `FACEBOOK_TOKEN`        | `INSTAGRAM_USER_ID`, `INSTAGRAM_TOKEN` (optional override)                    |
-| Facebook Reels  | Graph API resumable upload (3-step)  | `FACEBOOK_TOKEN`/`PAGE` | —                                                                            |
-| LinkedIn Video  | Posts API + Assets API multipart     | `LINKEDIN_TOKEN`        | —                                                                            |
-| Threads Video   | Threads Graph API container/publish  | `THREADS_TOKEN`         | —                                                                            |
-| TikTok          | Content Posting API draft / direct   | own oauth2 user token   | `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_DIRECT_POST`, `TIKTOK_PRIVACY` |
-
-**How Meta and LinkedIn get the file:** they pull-from-URL, not multipart. `openclaw/distribution/video_hosting.py` uploads the local mp4 to WordPress as a media attachment and returns the WP CDN URL — costs nothing extra, reuses an auth we already have, and the artifacts/ purge leaves the WP copy alone.
-
-**TikTok caveat:** until your TikTok app is audited, direct-post mode (`TIKTOK_DIRECT_POST=true`) forces `SELF_ONLY` privacy. Use draft mode (`TIKTOK_DIRECT_POST=false`) to land videos in the user's TikTok Inbox for one-tap manual publish until audit clears.
+Do not raise these casually. For this site, refreshing and promoting the back catalog is more valuable than publishing many new articles.
 
 ---
 
-## Reddit — read this before flipping the switch
+## Distribution channels
 
-`DIST_REDDIT=false` by default. Reddit auto-submission without account history → shadowban within hours. Safe path:
-
-1. Create a Reddit app at https://www.reddit.com/prefs/apps (type: script).
-2. Fill `REDDIT_*` env vars.
-3. Leave `REDDIT_ALLOWED_SUBS=u_aloycwl` (your own profile sub) for the first month. Build karma manually by commenting on r/MachineLearning, r/algotrading, r/LocalLLaMA threads in your actual voice.
-4. Only after you have >100 karma in a sub AND that sub's rules permit self-promotion, add it to the allowlist.
-
-The module enforces a 4-hour minimum interval between posts via local state.
-
----
-
-## Hacker News — semi-automated
-
-There is **no official posting API**. The module builds a one-tap `news.ycombinator.com/submitlink?...` URL and DMs it to your Telegram chat (set `HN_NOTIFY_TELEGRAM_CHAT_ID`). You glance and tap. This preserves account quality (HN's anti-bot is unforgiving — once `[dead]`, accounts never recover).
-
-Submit your strongest 1–2 posts per **week**, ideally around 07:30 / 14:00 UTC. Most posts won't take off. The ones that do can deliver 5–20k visits.
+| Channel | Default | Auth path | Notes |
+|---|---:|---|---|
+| LinkedIn | on | Composio preferred; direct token fallback | Best organic fit for AI/tech/business articles. |
+| Facebook | on | Composio preferred; direct token fallback | Requires a Page id. |
+| Reddit | off | Composio only | Enable only after subreddit review and allowlist setup. |
+| Bluesky | on | direct app password | Good low-friction distribution. |
+| Threads | on | direct token | Image/link distribution. |
+| Telegram | on | bot token | Also useful for approval notifications. |
+| Discord | on | bot token | Useful only when relevant communities exist. |
+| Hacker News | on | semi-automated link | No official posting API; requires human approval. |
+| YouTube Shorts | off | Google OAuth file/token | Optional video growth loop. |
+| WordPress.com mirror | off | deprecated | Duplicate-content risk. |
+| Dev.to | off | deprecated | Account-ban risk on automated content. |
 
 ---
 
-## Distribution channels at a glance
+## ByteDance image/video generation
 
-| Channel          | Default | Why                                                            |
-|------------------|---------|----------------------------------------------------------------|
-| LinkedIn         | on      | Best ROI; posts as ARTICLE share (richer link card)            |
-| Bluesky          | on      | Growing organic discovery, low friction                        |
-| Telegram         | on      | Owned audience + used for HN approval links                    |
-| Hashnode         | on      | Sets canonical → InsightGinie (no duplicate-content penalty)   |
-| Threads          | on      | Meta reach, image post                                         |
-| Facebook         | on      | Low organic but free                                           |
-| Discord          | on      | Useful when joining external servers; less so for own channel  |
-| Nostr            | on      | Free long tail                                                 |
-| Reddit           | **off** | Enable only with karma + sub allowlist                         |
-| Hacker News      | on      | Semi-automated via Telegram (no API risk)                      |
-| YouTube Shorts   | **off** | Powerful, but requires Seedream + ffmpeg + OAuth setup         |
-| Instagram Reels  | **off** | Fan-out from the YouTube Short mp4 (needs IG Business account) |
-| Facebook Reels   | **off** | Fan-out from the YouTube Short mp4 (Page token, same as FB)    |
-| LinkedIn Video   | **off** | Native video post; reuses `LINKEDIN_TOKEN`                     |
-| Threads Video    | **off** | Fan-out from the YouTube Short mp4; reuses `THREADS_TOKEN`     |
-| TikTok           | **off** | Draft or direct-post mode; see audit caveat above              |
-| WordPress.com    | **off** | Duplicate content — keep OFF                                   |
-| Dev.to           | **off** | Account ban risk on autoblog content                           |
+Seedream generates article and promo images. Seedance can create short video clips for the Shorts pipeline.
+
+```env
+SEEDREAM_API_KEY=
+SEEDREAM_ENDPOINT=https://ark.ap-southeast.bytepluses.com/api/v3/images/generations
+SEEDREAM_MODEL=seedream-5-0-260128
+SEEDANCE_API_KEY=
+SEEDANCE_ENDPOINT=https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks
+SEEDANCE_MODEL=dreamina-seedance-2-0-fast-260128
+```
+
+If these are missing, the core WordPress/GSC/GA4 workflows still run.
 
 ---
 
-## Migrating from v0.1
+## Operational notes
 
-Your existing cron and code keep working — `wordpress-automation.py` and `socialMedia.py` are thin shims that delegate to the new package. To take full advantage:
-
-1. **Drop the 15-minute cron immediately.** Switch to the hourly orchestrator (`0 * * * *  scripts/orchestrate.py`).
-2. Edit `data/curated_categories.json` to your chosen niche subset (default is AI + Quant Trading).
-3. Add `SEEDREAM_API_KEY` to `.env`.
-4. Optionally enable Reddit / YouTube Shorts / video fan-out following the sections above.
+- All environment access should go through `openclaw.config.settings`.
+- Do not store provider API secrets in committed files.
+- `artifacts/`, `logs/`, `.env`, and OAuth token files are ignored.
+- Use Composio for OAuth tools whenever possible; avoid creating platform-specific app keys unless needed.
+- Run `python3 scripts/doctor.py` after changing credentials.
+- Check runtime logs with `tail -n 100 logs/wp.log`.
 
 ---
 
-## License
+## Legacy shims
 
-See repository root.
+`wordpress-automation.py` and `socialMedia.py` remain for backwards compatibility, but new workflows should call the `scripts/` entrypoints directly.

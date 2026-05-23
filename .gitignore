@@ -9,3 +9,5 @@ youtube-client-secrets.json
 .venv/
 venv/
 .DS_Store
+logs/
+*.log

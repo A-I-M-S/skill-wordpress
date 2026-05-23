@@ -3,7 +3,7 @@ name: skill-wordpress
 description: "Automated SEO autoblogging and multi-platform distribution. Generates long-form SEO articles, publishes to WordPress with E-E-A-T enrichment + ByteDance Seedream images, and fans out to LinkedIn, Bluesky, Threads, Facebook, Telegram, Discord, Hashnode, Nostr, Reddit, Hacker News (semi-auto) and YouTube Shorts. Enforces a hard 4-posts/day publishing cap to stay clear of Google's scaled-content-abuse signal."
 ---
 
-# OpenClaw — SEO Autoblogging & Distribution (v0.2)
+# OpenClaw — SEO Growth Engine (v0.4)
 
 A maintained, package-structured pipeline for AI-driven content + multi-channel distribution. Built with strict velocity guardrails because the legacy 15-min cron (96 posts/day) is the exact pattern Google's Helpful Content system penalises.
 
@@ -45,10 +45,10 @@ data/            # curated_categories.json, categories.full.json
 wordpress-automation.py / socialMedia.py   # legacy shims for backward-compat
 ```
 
-See README.md for the full architecture, distributor matrix, Reddit/HN/YouTube setup, and migration notes from v0.1.
+See README.md for the full architecture, Composio setup, distributor matrix, Reddit/HN/YouTube setup, and migration notes.
 
 ## Notes
 
 - `data/curated_categories.json` is the niche-restricted category list used by `publish.py`. Edit it to control which categories the autoblogger writes for.
 - All env vars are accessed via `openclaw.config.settings` — do not read env from any other module.
-- Reddit defaults OFF, YouTube Shorts defaults OFF, WordPress.com mirror defaults OFF (duplicate-content footgun), Dev.to defaults OFF (account ban risk).
+- Composio handles Google Search Console, Google Analytics, Google Sheets, Reddit, LinkedIn, and Facebook OAuth. Reddit defaults OFF; YouTube Shorts defaults OFF; WordPress.com mirror and Dev.to stay OFF because they are duplicate-content/account-risk footguns.

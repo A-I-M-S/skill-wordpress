@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openclaw.config import settings  # noqa: E402
 from openclaw.gsc import top_refresh_candidates, is_available as gsc_available, Opportunity  # noqa: E402
+from openclaw.growth_sheet import sync_opportunities  # noqa: E402
 from openclaw.indexing import submit_bing, submit_indexnow  # noqa: E402
 from openclaw.llm import LLMClient  # noqa: E402
 from openclaw.logging_utils import log  # noqa: E402
@@ -167,7 +168,9 @@ def main() -> int:
 
     if gsc_available():
         log.info("refresh.mode=gsc")
-        for opp in top_refresh_candidates(n=args.limit):
+        opportunities = top_refresh_candidates(n=args.limit)
+        sync_opportunities(opportunities)
+        for opp in opportunities:
             if _refresh_one_gsc(opp, wp, args.dry_run):
                 n_done += 1
     else:
