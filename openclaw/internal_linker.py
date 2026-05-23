@@ -28,23 +28,39 @@ from .config import settings
 from .logging_utils import log
 
 
+STOPWORDS = {
+    "about", "after", "before", "beginner", "beginners", "complete", "could",
+    "does", "entry", "explained", "guide", "learn", "properly", "reveals",
+    "should", "strategy", "ultimate", "using", "what", "when", "where",
+    "which", "with", "work", "works", "your",
+}
+
+
 def _tokens(text: str) -> set[str]:
     text = re.sub(r"<[^>]+>", " ", text).lower()
-    return {t for t in re.findall(r"[a-z][a-z0-9]{2,}", text) if len(t) > 3}
+    tokens = set(re.findall(r"[a-z][a-z0-9]{2,}", text))
+    return {t for t in tokens if len(t) > 3 and t not in STOPWORDS}
 
 
 def _score(new_tokens: set[str], post: dict) -> float:
     title = post.get("title", {}).get("rendered", "") or ""
+    excerpt = post.get("excerpt", {}).get("rendered", "") or ""
     tags = set()
     for tag_list in (post.get("_embedded", {}).get("wp:term") or []):
         if isinstance(tag_list, list):
             for t in tag_list:
                 if isinstance(t, dict):
-                    tags.add(t.get("name", "").lower())
-    other_tokens = _tokens(title) | tags
+                    tags |= _tokens(t.get("name", ""))
+    title_tokens = _tokens(title)
+    other_tokens = title_tokens | _tokens(excerpt) | tags
     if not other_tokens:
         return 0.0
-    inter = len(new_tokens & other_tokens)
+    overlap = new_tokens & other_tokens
+    title_overlap = new_tokens & title_tokens
+    tag_overlap = new_tokens & tags
+    if len(title_overlap) < 2 and not tag_overlap:
+        return 0.0
+    inter = len(overlap)
     union = len(new_tokens | other_tokens)
     return inter / union if union else 0.0
 
@@ -77,13 +93,15 @@ def find_related(
         log.warning("linker.fetch_err err=%s", exc)
         return []
 
-    new_tokens = _tokens(new_title) | {t.lower() for t in new_tags}
+    new_tokens = _tokens(new_title)
+    for tag in new_tags:
+        new_tokens |= _tokens(tag)
     scored = [
         (_score(new_tokens, p), p) for p in candidates
         if p.get("link")
     ]
     scored.sort(key=lambda x: -x[0])
-    return [p for s, p in scored if s > 0.05][:limit]
+    return [p for s, p in scored if s >= 0.10][:limit]
 
 
 def inject_inline_links(html: str, related: list[dict], max_inline: int = 3) -> str:

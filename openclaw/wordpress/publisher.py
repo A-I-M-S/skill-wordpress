@@ -14,7 +14,6 @@ from ..logging_utils import log
 from ..seo import (
     build_article_schema,
     inject_author_block,
-    inject_internal_links,
     load_recent_titles,
     is_duplicate_title,
     primary_keyword,
@@ -136,10 +135,9 @@ class Publisher:
         # Featured image
         media_id, image_url = self._resolve_featured_image(article)
 
-        # Enrich content
-        related = self.wp.list_recent_posts(category_id, per_page=3)
-        body = inject_internal_links(article.content, related)
-        body = inject_author_block(body)
+        # Enrich content. Internal links are added by scripts.publish before publishing;
+        # keep Publisher from adding a duplicate related-reading block.
+        body = inject_author_block(article.content)
 
         # Tags
         tag_ids = self.wp.ensure_tags(article.tags)

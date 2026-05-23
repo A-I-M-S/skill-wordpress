@@ -65,6 +65,13 @@ def is_duplicate_title(
     return False
 
 
+
+def _wp_title_text(post: dict) -> str:
+    title = post.get("title", "")
+    if isinstance(title, dict):
+        title = title.get("rendered", "")
+    return re.sub(r"<[^>]+>", "", str(title)).strip()
+
 def inject_internal_links(html: str, related: Sequence[dict], max_links: int = 3) -> str:
     """Append a Related Reading block linking to other in-niche posts.
     `related` items must have `title` and `link` keys (WP REST shape)."""
@@ -72,9 +79,12 @@ def inject_internal_links(html: str, related: Sequence[dict], max_links: int = 3
         return html
     chosen = related[:max_links]
     items = "\n".join(
-        f'<li><a href="{post["link"]}" rel="bookmark">{post["title"]}</a></li>'
+        f'<li><a href="{post["link"]}" rel="bookmark">{_wp_title_text(post)}</a></li>'
         for post in chosen
+        if post.get("link") and _wp_title_text(post)
     )
+    if not items:
+        return html
     block = (
         "\n<h3>Related reading on InsightGinie</h3>\n"
         f"<ul>\n{items}\n</ul>\n"
