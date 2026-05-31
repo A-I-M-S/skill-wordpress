@@ -1,13 +1,20 @@
-"""Google Analytics helpers via Composio OAuth."""
+"""Google Analytics (GA4) helpers via a Google service account (Data API v1beta)."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from .composio_client import ComposioClient, available as composio_available
+import requests
+
 from .config import settings
+from .google_auth import bearer_token, service_account_path
 from .logging_utils import log
+
+_SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
+_DATA_URL = "https://analyticsdata.googleapis.com/v1beta"
+_ADMIN_URL = "https://analyticsadmin.googleapis.com/v1beta"
 
 
 @dataclass
@@ -28,11 +35,7 @@ class ReferralMetric:
 
 
 def _ga_ready() -> bool:
-    return bool(
-        composio_available()
-        and settings.composio.google_analytics_account_id
-        and settings.composio.ga4_property
-    )
+    return bool(service_account_path() and settings.composio.ga4_property)
 
 
 def is_available() -> bool:
@@ -43,14 +46,22 @@ def list_account_summaries() -> list[dict[str, Any]]:
     if not _ga_ready():
         log.info("ga.skip reason=not_configured")
         return []
-    result = ComposioClient().execute(
-        "GOOGLE_ANALYTICS_LIST_ACCOUNT_SUMMARIES",
-        connected_account_id=settings.composio.google_analytics_account_id,
-    )
-    if not result.successful:
-        log.warning("ga.account_summaries err=%s", result.error)
+    token = bearer_token(_SCOPES)
+    if not token:
         return []
-    return result.data.get("accountSummaries", []) if isinstance(result.data, dict) else []
+    try:
+        r = requests.get(
+            f"{_ADMIN_URL}/accountSummaries",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if r.status_code >= 400:
+            log.warning("ga.account_summaries err=status_%s body=%s", r.status_code, r.text[:300])
+            return []
+        return r.json().get("accountSummaries", [])
+    except Exception as exc:
+        log.warning("ga.account_summaries err=%s", exc)
+        return []
 
 
 def run_report(*, dimensions: list[str], metrics: list[str], days: int = 28, limit: int = 100,
@@ -58,28 +69,36 @@ def run_report(*, dimensions: list[str], metrics: list[str], days: int = 28, lim
     if not _ga_ready():
         log.info("ga.skip reason=not_configured")
         return {}
+    token = bearer_token(_SCOPES)
+    if not token:
+        return {}
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days)
-    args: dict[str, Any] = {
-        "property": settings.composio.ga4_property,
+    body: dict[str, Any] = {
         "dateRanges": [{"startDate": start.isoformat(), "endDate": end.isoformat()}],
         "dimensions": [{"name": d} for d in dimensions],
         "metrics": [{"name": m} for m in metrics],
         "limit": limit,
     }
     if order_metric:
-        args["orderBys"] = [{"desc": True, "metric": {"metricName": order_metric}}]
+        body["orderBys"] = [{"desc": True, "metric": {"metricName": order_metric}}]
     if filters:
-        args["dimensionFilter"] = filters
-    result = ComposioClient().execute(
-        "GOOGLE_ANALYTICS_RUN_REPORT",
-        connected_account_id=settings.composio.google_analytics_account_id,
-        arguments=args,
-    )
-    if not result.successful:
-        log.warning("ga.run_report err=%s", result.error)
+        body["dimensionFilter"] = filters
+    prop = settings.composio.ga4_property
+    try:
+        r = requests.post(
+            f"{_DATA_URL}/{prop}:runReport",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            data=json.dumps(body),
+            timeout=30,
+        )
+        if r.status_code >= 400:
+            log.warning("ga.run_report err=status_%s body=%s", r.status_code, r.text[:300])
+            return {}
+        return r.json() if isinstance(r.json(), dict) else {}
+    except Exception as exc:
+        log.warning("ga.run_report err=%s", exc)
         return {}
-    return result.data if isinstance(result.data, dict) else {}
 
 
 def _metric_value(row: dict[str, Any], idx: int, default: float = 0) -> float:

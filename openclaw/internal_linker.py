@@ -19,7 +19,7 @@ within a site — and it's nearly free (one extra WP query per publish).
 from __future__ import annotations
 
 import re
-from html import escape
+from html import escape, unescape
 from typing import Iterable, List, Optional
 
 import requests
@@ -41,6 +41,40 @@ def _tokens(text: str) -> set[str]:
     tokens = set(re.findall(r"[a-z][a-z0-9]{2,}", text))
     return {t for t in tokens if len(t) > 3 and t not in STOPWORDS}
 
+
+
+
+def _plain_text(value: object) -> str:
+    if isinstance(value, dict):
+        value = value.get("rendered", "")
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _replace_text_outside_anchors(html: str, phrase: str, replacement: str) -> tuple[str, int]:
+    if not phrase.strip():
+        return html, 0
+    pattern = re.compile(rf"(?<![\w])({re.escape(phrase)})(?![\w])", re.IGNORECASE)
+    parts = re.split(r"(<[^>]+>)", html)
+    in_anchor = False
+    for idx, part in enumerate(parts):
+        if not part:
+            continue
+        if part.startswith("<") and part.endswith(">"):
+            tag = part.lower()
+            if re.match(r"<\s*a(?:\s|>|/)", tag):
+                in_anchor = True
+            elif re.match(r"<\s*/\s*a\s*>", tag):
+                in_anchor = False
+            continue
+        if in_anchor:
+            continue
+        new_part, n = pattern.subn(replacement, part, count=1)
+        if n:
+            parts[idx] = new_part
+            return "".join(parts), n
+    return html, 0
 
 def _score(new_tokens: set[str], post: dict) -> float:
     title = post.get("title", {}).get("rendered", "") or ""
@@ -105,8 +139,7 @@ def find_related(
 
 
 def inject_inline_links(html: str, related: list[dict], max_inline: int = 3) -> str:
-    """Find the first occurrence of each related post's key noun in the
-    body and wrap it in an <a href> link. Cap at `max_inline` total."""
+    """Add contextual links only in text nodes, never inside tags/attributes or existing anchors."""
     if not related:
         return html
     used_urls: set[str] = set()
@@ -115,36 +148,24 @@ def inject_inline_links(html: str, related: list[dict], max_inline: int = 3) -> 
     for post in related:
         if inserted >= max_inline:
             break
-        title = post["title"]["rendered"]
-        url = post["link"]
-        if url in used_urls:
+        clean_title = _plain_text(post.get("title", ""))
+        url = str(post.get("link") or "").strip()
+        if not clean_title or not url or url in used_urls:
             continue
-        # Pick the most "noun-y" 2-3 word token sequence in the title.
-        # Strip common stopwords and HTML.
-        clean_title = re.sub(r"<[^>]+>", "", title).strip()
         words = clean_title.split()
         for n in (4, 3, 2):
             if len(words) < n:
                 continue
             for i in range(len(words) - n + 1):
-                phrase = " ".join(words[i:i + n])
-                if len(phrase) < 8:
-                    continue
-                # Case-insensitive single replacement in body, but only in
-                # paragraph text (avoid double-linking inside existing <a>).
-                pattern = re.compile(
-                    rf"(?<![>\w])({re.escape(phrase)})(?![\w<])",
-                    flags=re.IGNORECASE,
-                )
-                if not pattern.search(out):
+                phrase = " ".join(words[i:i + n]).strip(".,:;!?()[]{}\"\'")
+                if len(phrase) < 8 or not (_tokens(phrase) - STOPWORDS):
                     continue
                 replacement = (
-                    f'<a href="{escape(url)}" '
-                    f'title="{escape(clean_title)}">\\1</a>'
+                    f'<a href="{escape(url, quote=True)}" '
+                    f'title="{escape(clean_title, quote=True)}">\\1</a>'
                 )
-                # Avoid linking inside existing <a> tags by checking first.
-                new_out, n_subs = pattern.subn(replacement, out, count=1)
-                if n_subs > 0:
+                new_out, n_subs = _replace_text_outside_anchors(out, phrase, replacement)
+                if n_subs:
                     out = new_out
                     used_urls.add(url)
                     inserted += 1
@@ -159,9 +180,10 @@ def append_related_block(html: str, related: list[dict]) -> str:
     if not related:
         return html
     items = "\n".join(
-        f'<li><a href="{escape(p["link"])}" rel="bookmark">'
-        f'{escape(re.sub(r"<[^>]+>", "", p["title"]["rendered"]))}</a></li>'
+        f'<li><a href="{escape(str(p.get("link", "")), quote=True)}" rel="bookmark">'
+        f'{escape(_plain_text(p.get("title", "")))}</a></li>'
         for p in related
+        if p.get("link") and _plain_text(p.get("title", ""))
     )
     block = (
         '<section class="related-reading">'

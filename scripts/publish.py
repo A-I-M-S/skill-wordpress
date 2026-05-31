@@ -20,7 +20,8 @@ import html2text
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openclaw.config import settings  # noqa: E402
-from openclaw.distribution import (  # noqa: E402
+from openclaw.distribution import (
+    blogger,  # noqa: E402
     bluesky,
     discord,
     facebook,
@@ -77,6 +78,8 @@ def fan_out(payload: PostPayload) -> None:
         reddit.post(payload)
     if flags.hackernews:
         hackernews.post(payload)
+    if flags.blogger:
+        blogger.post(payload)
     if flags.youtube_shorts:
         youtube_shorts.post(payload)
 

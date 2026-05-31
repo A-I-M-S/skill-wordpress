@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
+from html import escape
 from typing import Iterable, List, Optional, Sequence
 
 from .config import settings
@@ -79,7 +80,8 @@ def inject_internal_links(html: str, related: Sequence[dict], max_links: int = 3
         return html
     chosen = related[:max_links]
     items = "\n".join(
-        f'<li><a href="{post["link"]}" rel="bookmark">{_wp_title_text(post)}</a></li>'
+        f'<li><a href="{escape(str(post["link"]), quote=True)}" rel="bookmark">'
+        f'{escape(_wp_title_text(post))}</a></li>'
         for post in chosen
         if post.get("link") and _wp_title_text(post)
     )
@@ -99,8 +101,9 @@ def inject_author_block(html: str, post_url_hint: Optional[str] = None) -> str:
         f'\n<p class="ig-review-block"><em>Reviewed by '
         f'<a href="{settings.publishing.author_url}" rel="author">'
         f"{settings.publishing.author_name}</a> on {today}. "
-        f"InsightGinie publishes practitioner-led analysis on AI, "
-        f"automation, and quantitative trading.</em></p>\n"
+        f"Insight Ginie uses AI-assisted research and human editorial review "
+        f"to explain technology, business, finance, and emerging markets. "
+        f"This article is informational and is not financial, investment, medical, or legal advice.</em></p>\n"
     )
     return html + block
 

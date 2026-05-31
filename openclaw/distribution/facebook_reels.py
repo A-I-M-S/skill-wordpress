@@ -20,6 +20,7 @@ import requests
 
 from ..logging_utils import log
 from .base import PostPayload
+from .facebook import page_access_token
 from .video_hosting import host_video
 
 API = "https://graph.facebook.com/v25.0"
@@ -32,6 +33,8 @@ def post_video(payload: PostPayload, video_path: Path) -> Optional[str]:
         log.info("facebook_reels.skip reason=no_credentials")
         return None
 
+    page_token = page_access_token(page, token) or token
+
     video_url = host_video(video_path)
     if not video_url:
         log.warning("facebook_reels.skip reason=video_hosting_failed")
@@ -42,7 +45,7 @@ def post_video(payload: PostPayload, video_path: Path) -> Optional[str]:
         # Phase 1 — start
         r = requests.post(
             f"{API}/{page}/video_reels",
-            data={"upload_phase": "start", "access_token": token},
+            data={"upload_phase": "start", "access_token": page_token},
             timeout=30,
         )
         r.raise_for_status()
@@ -56,7 +59,7 @@ def post_video(payload: PostPayload, video_path: Path) -> Optional[str]:
         # Phase 2 — file_url upload (Meta fetches from our WP CDN)
         u = requests.post(
             upload_url,
-            headers={"Authorization": f"OAuth {token}", "file_url": video_url},
+            headers={"Authorization": f"OAuth {page_token}", "file_url": video_url},
             timeout=60,
         )
         u.raise_for_status()
@@ -72,7 +75,7 @@ def post_video(payload: PostPayload, video_path: Path) -> Optional[str]:
                 "video_id": video_id,
                 "video_state": "PUBLISHED",
                 "description": description,
-                "access_token": token,
+                "access_token": page_token,
             },
             timeout=30,
         )

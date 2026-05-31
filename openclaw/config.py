@@ -197,6 +197,33 @@ class YouTubeConfig:
 
 
 @dataclass(frozen=True)
+class BloggerConfig:
+    enabled: bool = field(default_factory=lambda: _env_bool("BLOGGER_ENABLED", False))
+    blog_id: Optional[str] = field(default_factory=lambda: _env("BLOGGER_BLOG_ID"))
+    blog_url: str = field(default_factory=lambda: _env("BLOGGER_BLOG_URL", "https://aloycwl.blogspot.com/") or "https://aloycwl.blogspot.com/")
+    client_secrets_file: str = field(
+        default_factory=lambda: _resolve_project_path(
+            _env("BLOGGER_CLIENT_SECRETS", "blogger-client-secrets.json")
+            or "blogger-client-secrets.json"
+        )
+    )
+    token_file: str = field(
+        default_factory=lambda: _resolve_project_path(
+            _env("BLOGGER_TOKEN_FILE", "blogger-token.json")
+            or "blogger-token.json"
+        )
+    )
+    labels: List[str] = field(
+        default_factory=lambda: _env_list("BLOGGER_LABELS", ["InsightGinie", "SEO Teaser"])
+    )
+    max_per_day: int = field(default_factory=lambda: _env_int("BLOGGER_MAX_PER_DAY", 1))
+    min_minutes_between_posts: int = field(
+        default_factory=lambda: _env_int("BLOGGER_MIN_INTERVAL_MIN", 720)
+    )
+    draft: bool = field(default_factory=lambda: _env_bool("BLOGGER_DRAFT", False))
+
+
+@dataclass(frozen=True)
 class DistributionFlags:
     linkedin: bool = field(default_factory=lambda: _env_bool("DIST_LINKEDIN", True))
     bluesky: bool = field(default_factory=lambda: _env_bool("DIST_BLUESKY", True))
@@ -210,6 +237,7 @@ class DistributionFlags:
     hashnode: bool = field(default_factory=lambda: _env_bool("DIST_HASHNODE", False))
     reddit: bool = field(default_factory=lambda: _env_bool("DIST_REDDIT", False))
     hackernews: bool = field(default_factory=lambda: _env_bool("DIST_HACKERNEWS", True))
+    blogger: bool = field(default_factory=lambda: _env_bool("DIST_BLOGGER", False))
     youtube_shorts: bool = field(default_factory=lambda: _env_bool("DIST_YOUTUBE_SHORTS", False))
     instagram_reels: bool = field(default_factory=lambda: _env_bool("DIST_INSTAGRAM_REELS", False))
     facebook_reels: bool = field(default_factory=lambda: _env_bool("DIST_FACEBOOK_REELS", False))
@@ -258,6 +286,7 @@ class Settings:
     reddit: RedditConfig = field(default_factory=RedditConfig)
     hn: HackerNewsConfig = field(default_factory=HackerNewsConfig)
     youtube: YouTubeConfig = field(default_factory=YouTubeConfig)
+    blogger: BloggerConfig = field(default_factory=BloggerConfig)
     distribution: DistributionFlags = field(default_factory=DistributionFlags)
     publishing: PublishingConfig = field(default_factory=PublishingConfig)
     indexnow_key: Optional[str] = field(default_factory=lambda: _env("INDEXNOW_KEY"))

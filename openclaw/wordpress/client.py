@@ -68,6 +68,23 @@ class WordPressClient:
         response.raise_for_status()
         return response.json()
 
+    def update_media_metadata(self, media_id: int, *, alt_text: str = "", title: str = "") -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if alt_text:
+            payload["alt_text"] = alt_text
+        if title:
+            payload["title"] = title
+        if not payload:
+            return self.get_media(media_id)
+        response = requests.post(
+            f"{self.base}/media/{media_id}",
+            auth=self.auth,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def upload_media(self, path: Path, alt_text: str = "", title: str = "") -> Dict[str, Any]:
         mime = mimetypes.guess_type(path.name)[0] or "image/png"
         with path.open("rb") as fh:
@@ -84,12 +101,7 @@ class WordPressClient:
         response.raise_for_status()
         media = response.json()
         if alt_text or title:
-            requests.post(
-                f"{self.base}/media/{media['id']}",
-                auth=self.auth,
-                json={"alt_text": alt_text, "title": title},
-                timeout=30,
-            )
+            self.update_media_metadata(media["id"], alt_text=alt_text, title=title)
         return media
 
     # ---- posts ----
@@ -125,6 +137,17 @@ class WordPressClient:
         post = response.json()
         log.info("wp.create_post id=%s url=%s", post.get("id"), post.get("link"))
         return post
+
+    def list_posts(self, *, page: int = 1, per_page: int = 100, **params: Any) -> List[Dict[str, Any]]:
+        query = {"page": page, "per_page": per_page, "orderby": "date", "order": "desc"}
+        query.update(params)
+        response = requests.get(
+            f"{self.base}/posts",
+            params=query,
+            auth=self.auth,
+            timeout=30,
+        )
+        return response.json() if response.ok else []
 
     def list_recent_posts(self, category_id: int, per_page: int = 5) -> List[Dict[str, Any]]:
         response = requests.get(

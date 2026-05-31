@@ -8,13 +8,13 @@ from ..social_copy import rewrite, utm_url
 from .base import PostPayload
 
 
-def post(payload: PostPayload) -> None:
+def post(payload: PostPayload) -> bool:
     if not (composio_available() and settings.composio.facebook_account_id):
         log.info("composio_facebook.skip reason=not_configured")
-        return
+        return False
     if not settings.composio.facebook_page_id:
         log.info("composio_facebook.skip reason=no_page_id")
-        return
+        return False
 
     url = utm_url(payload.url, source="facebook")
     message = rewrite(payload.title, payload.excerpt, channel="facebook", url=url)
@@ -30,5 +30,6 @@ def post(payload: PostPayload) -> None:
     )
     if result.successful:
         log.info("composio_facebook.post ok data=%s", result.data)
-    else:
-        log.warning("composio_facebook.post err=%s", result.error)
+        return True
+    log.warning("composio_facebook.post err=%s", result.error)
+    return False

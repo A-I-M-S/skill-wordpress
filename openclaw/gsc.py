@@ -1,19 +1,20 @@
 """Google Search Console integration — find your highest-leverage pages.
 
-Preferred mode uses Composio OAuth, so there is no Google service-account JSON
-in this repo. Legacy service-account mode remains as a fallback.
+Uses a Google service-account JSON (see openclaw/google_auth.py). Skips
+gracefully when the credential file is absent.
 """
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import List, Optional
 
-from .config import PROJECT_ROOT, settings
-from .composio_client import ComposioClient, available as composio_available
+from .config import settings
+from .google_auth import credentials, service_account_path
 from .logging_utils import log
+
+_SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 
 
 @dataclass
@@ -41,30 +42,22 @@ class Opportunity:
         return self.impressions * (1 + ctr_gap * 20) * (1 + position_bonus / 10)
 
 
-def _gsc_service_account_path() -> Optional[str]:
-    path = os.getenv("GSC_SERVICE_ACCOUNT_FILE", "gsc-service-account.json")
-    if not os.path.isabs(path):
-        path = str(PROJECT_ROOT / path)
-    return path if os.path.exists(path) else None
+def _site_url() -> str:
+    return os.getenv("GSC_SITE_URL") or settings.composio.gsc_site_url
 
 
 def _gsc_service():
     """Build an authenticated Search Console API service. Returns None
     if creds are missing (caller falls back to WP-only mode)."""
-    creds_path = _gsc_service_account_path()
-    if not creds_path:
+    creds = credentials(_SCOPES)
+    if not creds:
         log.info("gsc.skip reason=no_service_account_file")
         return None
     try:
-        from google.oauth2 import service_account
         from googleapiclient.discovery import build
     except ImportError:
         log.warning("gsc.skip reason=google_api_libs_missing")
         return None
-    creds = service_account.Credentials.from_service_account_file(
-        creds_path,
-        scopes=["https://www.googleapis.com/auth/webmasters.readonly"],
-    )
     return build("searchconsole", "v1", credentials=creds, cache_discovery=False)
 
 
@@ -87,15 +80,15 @@ def _rows_to_opportunities(rows: list[dict]) -> list[Opportunity]:
 
 
 def list_sites() -> list[dict]:
-    if composio_available() and settings.composio.gsc_account_id:
-        result = ComposioClient().execute(
-            "GOOGLE_SEARCH_CONSOLE_LIST_SITES",
-            connected_account_id=settings.composio.gsc_account_id,
-        )
-        if result.successful:
-            return result.data.get("siteEntry", []) if isinstance(result.data, dict) else []
-        log.warning("gsc.composio_list_sites err=%s", result.error)
-    return []
+    svc = _gsc_service()
+    if not svc:
+        return []
+    try:
+        resp = svc.sites().list().execute()
+    except Exception as exc:
+        log.warning("gsc.list_sites_err err=%s", exc)
+        return []
+    return resp.get("siteEntry", []) if isinstance(resp, dict) else []
 
 
 def fetch_opportunities(
@@ -104,32 +97,13 @@ def fetch_opportunities(
     lookback_days: int = 28,
     row_limit: int = 200,
 ) -> List[Opportunity]:
-    site_url = site_url or settings.composio.gsc_site_url or os.getenv("GSC_SITE_URL")
+    site_url = site_url or _site_url()
     if not site_url:
         log.info("gsc.skip reason=no_site_url")
         return []
 
     end = date.today() - timedelta(days=2)
     start = end - timedelta(days=lookback_days)
-
-    if composio_available() and settings.composio.gsc_account_id:
-        result = ComposioClient().execute(
-            "GOOGLE_SEARCH_CONSOLE_SEARCH_ANALYTICS_QUERY",
-            connected_account_id=settings.composio.gsc_account_id,
-            arguments={
-                "site_url": site_url,
-                "start_date": start.isoformat(),
-                "end_date": end.isoformat(),
-                "dimensions": ["page", "query"],
-                "row_limit": row_limit,
-                "data_state": "all",
-            },
-        )
-        if result.successful and isinstance(result.data, dict):
-            opps = _rows_to_opportunities(result.data.get("rows", []))
-            log.info("gsc.composio_fetched n=%d range=%s..%s", len(opps), start, end)
-            return opps
-        log.warning("gsc.composio_query_err err=%s", result.error)
 
     svc = _gsc_service()
     if not svc:
@@ -158,10 +132,11 @@ def top_refresh_candidates(n: int = 5) -> List[Opportunity]:
     """Return the N highest-leverage pages to refresh."""
     opps = fetch_opportunities()
     opps.sort(key=lambda o: -o.score)
+    site = (_site_url() or "").rstrip("/")
     by_page: dict[str, Opportunity] = {}
     # Dedup by page — keep the best-scoring query per page
     for o in opps:
-        if o.score <= 0 or o.page.rstrip("/") == (settings.composio.gsc_site_url or "").rstrip("/"):
+        if o.score <= 0 or o.page.rstrip("/") == site:
             continue
         if o.page not in by_page:
             by_page[o.page] = o
@@ -175,6 +150,4 @@ def top_refresh_candidates(n: int = 5) -> List[Opportunity]:
 
 
 def is_available() -> bool:
-    if composio_available() and settings.composio.gsc_account_id and settings.composio.gsc_site_url:
-        return True
-    return bool(os.getenv("GSC_SITE_URL")) and _gsc_service_account_path() is not None
+    return bool(_site_url() and service_account_path())

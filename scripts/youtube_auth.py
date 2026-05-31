@@ -30,6 +30,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 import urllib.parse
 from pathlib import Path
@@ -57,6 +59,10 @@ def _ensure_deps() -> None:
             "Missing dependencies. Install with:\n"
             "    pip install google-api-python-client google-auth-oauthlib"
         )
+
+
+def _state_file(token_file: Path) -> Path:
+    return token_file.with_suffix(".oauth_state.json")
 
 
 def _save_creds(creds, token_file: Path) -> None:
@@ -88,7 +94,7 @@ def tunnel_mode(secrets_file: Path, token_file: Path, port: int) -> None:
     print("\nOn your LAPTOP (not this server), run:\n")
     print(f"    ssh -L {port}:localhost:{port} <user>@<this-server>\n")
     print("Leave that SSH session open. Then come back here and continue.")
-    input("\nPress Enter when the tunnel is up... ")
+    print("\nStarting listener...")
 
     flow = InstalledAppFlow.from_client_secrets_file(str(secrets_file), SCOPES)
     print(f"\nListening on port {port}. Open the URL below in your laptop browser:\n")
@@ -102,50 +108,85 @@ def tunnel_mode(secrets_file: Path, token_file: Path, port: int) -> None:
     _verify(creds)
 
 
-def manual_mode(secrets_file: Path, token_file: Path) -> None:
+def print_manual_auth_url(secrets_file: Path, token_file: Path) -> None:
     from google_auth_oauthlib.flow import Flow  # type: ignore
-
-    print("=" * 72)
-    print("YOUTUBE OAUTH — MANUAL PASTE MODE")
-    print("=" * 72)
 
     flow = Flow.from_client_secrets_file(
         str(secrets_file),
         scopes=SCOPES,
-        redirect_uri="http://localhost",  # any localhost works; we paste it back
+        redirect_uri="http://localhost",
     )
-    auth_url, _ = flow.authorization_url(
+    auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
     )
+    state_payload = {
+        "state": state,
+        "code_verifier": getattr(flow, "code_verifier", None),
+        "redirect_uri": flow.redirect_uri,
+    }
+    _state_file(token_file).write_text(json.dumps(state_payload, indent=2))
+
+    print("=" * 72)
+    print("YOUTUBE OAUTH — MANUAL PASTE MODE")
+    print("=" * 72)
     print("\n1. Open this URL in any browser (laptop, phone, anywhere):\n")
     print(f"   {auth_url}\n")
-    print("2. Complete consent. You'll be redirected to a URL that starts with")
-    print("   http://localhost/?... and your browser will show a 'site can't be")
-    print("   reached' error. THAT IS FINE. Copy the full URL from the")
-    print("   address bar.\n")
-    pasted = input("3. Paste the full redirect URL here: ").strip()
+    print("2. Complete consent. You will be redirected to a URL that starts with")
+    print("   http://localhost/?... and the page may fail to load. That is fine.")
+    print("3. Copy the full URL from the address bar and run:\n")
+    print("   python3 scripts/youtube_auth.py --redirect-url 'http://localhost/?state=...&code=...'")
 
-    qs = urllib.parse.urlparse(pasted).query
-    params = urllib.parse.parse_qs(qs)
+
+def exchange_redirect(secrets_file: Path, token_file: Path, redirect_url: str) -> None:
+    from google_auth_oauthlib.flow import Flow  # type: ignore
+
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+
+    state_path = _state_file(token_file)
+    if not state_path.exists():
+        sys.exit("OAuth state file missing. Run: python3 scripts/youtube_auth.py --manual")
+    state_payload = json.loads(state_path.read_text())
+
+    params = urllib.parse.parse_qs(urllib.parse.urlparse(redirect_url).query)
     if "error" in params:
         sys.exit(f"\nOAuth error: {params['error'][0]}")
     if "code" not in params:
-        sys.exit("\nCould not find ?code=... in the pasted URL. Try again.")
+        sys.exit("\nCould not find ?code=... in the redirect URL. Try again.")
+    if params.get("state", [None])[0] != state_payload.get("state"):
+        sys.exit("OAuth state mismatch. Generate a fresh auth URL and approve that exact URL.")
 
-    code = params["code"][0]
+    flow = Flow.from_client_secrets_file(
+        str(secrets_file),
+        scopes=SCOPES,
+        redirect_uri=state_payload.get("redirect_uri") or "http://localhost",
+    )
+    if state_payload.get("code_verifier"):
+        flow.code_verifier = state_payload["code_verifier"]
+
     print("\nExchanging code for tokens...")
-    flow.fetch_token(code=code)
+    flow.fetch_token(authorization_response=redirect_url)
     creds = flow.credentials
     _save_creds(creds, token_file)
+    token_file.chmod(0o600)
+    state_path.unlink(missing_ok=True)
     _verify(creds)
 
+
+def manual_mode(secrets_file: Path, token_file: Path, redirect_url: str | None = None) -> None:
+    if redirect_url:
+        exchange_redirect(secrets_file, token_file, redirect_url)
+    else:
+        print_manual_auth_url(secrets_file, token_file)
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="YouTube OAuth helper (headless-friendly).")
     ap.add_argument("--manual", action="store_true",
-                    help="Paste-back mode (no networking on this host needed).")
+                    help="Print an auth URL and save PKCE state for paste-back mode.")
+    ap.add_argument("--redirect-url",
+                    help="Exchange the final http://localhost redirect URL from manual mode.")
     ap.add_argument("--port", type=int,
                     default=int(__import__("os").environ.get("YOUTUBE_AUTH_PORT", "8089")),
                     help="Callback port for tunnel mode (default 8089).")
@@ -170,7 +211,9 @@ def main() -> int:
         if ans != "y":
             return 1
 
-    if args.manual:
+    if args.redirect_url:
+        manual_mode(secrets_file, token_file, args.redirect_url)
+    elif args.manual:
         manual_mode(secrets_file, token_file)
     else:
         tunnel_mode(secrets_file, token_file, args.port)

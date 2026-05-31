@@ -25,7 +25,6 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openclaw.config import ARTIFACTS_DIR, settings  # noqa: E402
-from openclaw.distribution import youtube_shorts  # noqa: E402
 from openclaw.distribution.base import PostPayload  # noqa: E402
 from openclaw.logging_utils import log  # noqa: E402
 
@@ -144,28 +143,28 @@ def main() -> int:
     log.info("shorts.target title=%r url=%s", payload.title, payload.url)
 
     if args.dry_run:
-        # Re-enable the flag locally for the dry-run so we exercise the pipeline
-        # without actually uploading.
+        # Re-enable the flag locally for the dry-run so we exercise generation
+        # without uploading. Import youtube_shorts only after env is adjusted,
+        # because config is loaded at import time.
         import os
         os.environ["DIST_YOUTUBE_SHORTS"] = "true"
         os.environ["YOUTUBE_ENABLED"] = "false"
-        # Reload settings module
-        from importlib import reload
-        from openclaw import config as _config
-        reload(_config)
+
+    from openclaw.distribution import youtube_shorts  # noqa: E402
 
     hero_url = _hero_image_url(wp_post)
     log.info("shorts.hero %s", hero_url or "(none — falling back to text-to-video)")
     url = youtube_shorts.post(payload, hero_image_url=hero_url)
-    state.setdefault("shorts", []).append({
-        "wp_url": payload.url,
-        "wp_title": payload.title,
-        "youtube_url": url,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "dry_run": args.dry_run,
-    })
-    _save_state(state)
-    print(url or "(dry-run, see artifacts/shorts/...)")
+    if url or args.dry_run:
+        state.setdefault("shorts", []).append({
+            "wp_url": payload.url,
+            "wp_title": payload.title,
+            "youtube_url": url,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "dry_run": args.dry_run,
+        })
+        _save_state(state)
+    print(url or "(dry-run, see artifacts/shorts/...)" if args.dry_run else "(no Short created)")
     return 0
 
 

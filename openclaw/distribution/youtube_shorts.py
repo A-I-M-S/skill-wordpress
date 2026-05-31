@@ -214,11 +214,12 @@ def _youtube_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                settings.youtube.client_secrets_file, _SCOPES
+            raise RuntimeError(
+                "YouTube token missing or invalid; run `python3 scripts/youtube_auth.py --manual`, "
+                "approve the URL, then run `python3 scripts/youtube_auth.py --redirect-url '<final localhost URL>'`."
             )
-            creds = flow.run_local_server(port=0)
         token_path.write_text(creds.to_json())
+        token_path.chmod(0o600)
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
 

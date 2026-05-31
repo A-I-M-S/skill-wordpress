@@ -1,42 +1,47 @@
-"""Google Sheets growth dashboard via Composio."""
+"""Google Sheets growth dashboard via a Google service account (Sheets API v4)."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Iterable, Sequence
 
-from .composio_client import ComposioClient, available as composio_available
 from .config import settings
+from .google_auth import credentials, service_account_path
 from .logging_utils import log
+
+_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+
+def _service():
+    creds = credentials(_SCOPES)
+    if not creds:
+        return None
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        log.warning("growth_sheet.skip reason=google_api_libs_missing")
+        return None
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
 def is_available() -> bool:
-    return bool(composio_available() and settings.composio.google_sheets_account_id)
-
-
-def _execute(tool: str, args: dict) -> dict:
-    result = ComposioClient().execute(
-        tool,
-        connected_account_id=settings.composio.google_sheets_account_id,
-        arguments=args,
-    )
-    if not result.successful:
-        raise RuntimeError(f"{tool} failed: {result.error}")
-    return result.data if isinstance(result.data, dict) else {}
+    return bool(service_account_path() and settings.composio.growth_sheet_id)
 
 
 def ensure_growth_sheet() -> str | None:
-    if not is_available():
-        log.info("growth_sheet.skip reason=not_configured")
-        return settings.composio.growth_sheet_id
     if settings.composio.growth_sheet_id:
         return settings.composio.growth_sheet_id
-    data = _execute("GOOGLESHEETS_CREATE_GOOGLE_SHEET1", {"title": "InsightGinie SEO Growth Dashboard"})
-    spreadsheet_id = (
-        data.get("spreadsheetId")
-        or data.get("spreadsheet_id")
-        or data.get("id")
-        or data.get("spreadsheet", {}).get("spreadsheetId")
-    )
+    svc = _service()
+    if not svc:
+        log.info("growth_sheet.skip reason=not_configured")
+        return None
+    try:
+        data = svc.spreadsheets().create(
+            body={"properties": {"title": "InsightGinie SEO Growth Dashboard"}}
+        ).execute()
+    except Exception as exc:
+        log.warning("growth_sheet.create_err err=%s", exc)
+        return None
+    spreadsheet_id = data.get("spreadsheetId")
     if spreadsheet_id:
         log.info("growth_sheet.created spreadsheet_id=%s", spreadsheet_id)
     else:
@@ -44,12 +49,21 @@ def ensure_growth_sheet() -> str | None:
     return spreadsheet_id
 
 
-def _add_sheet_if_missing(spreadsheet_id: str, sheet_name: str) -> None:
+def _existing_sheets(svc, spreadsheet_id: str) -> set[str]:
+    meta = svc.spreadsheets().get(
+        spreadsheetId=spreadsheet_id, fields="sheets.properties.title"
+    ).execute()
+    return {s["properties"]["title"] for s in meta.get("sheets", [])}
+
+
+def _add_sheet_if_missing(svc, spreadsheet_id: str, sheet_name: str) -> None:
     try:
-        _execute("GOOGLESHEETS_ADD_SHEET", {
-            "spreadsheet_id": spreadsheet_id,
-            "title": sheet_name,
-        })
+        if sheet_name in _existing_sheets(svc, spreadsheet_id):
+            return
+        svc.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [{"addSheet": {"properties": {"title": sheet_name}}}]},
+        ).execute()
         log.info("growth_sheet.add_sheet ok sheet=%s", sheet_name)
     except Exception as exc:
         msg = str(exc).lower()
@@ -61,28 +75,25 @@ def write_rows(sheet_name: str, rows: Sequence[Sequence[object]], *, spreadsheet
                first_cell: str = "A1") -> None:
     if not rows:
         return
+    svc = _service()
+    if not svc:
+        log.info("growth_sheet.skip reason=not_configured")
+        return
     spreadsheet_id = spreadsheet_id or ensure_growth_sheet()
     if not spreadsheet_id:
         return
-    args = {
-        "spreadsheet_id": spreadsheet_id,
-        "sheet_name": sheet_name,
-        "first_cell_location": first_cell,
-        "value_input_option": "USER_ENTERED",
-        "values": [list(r) for r in rows],
-    }
+    _add_sheet_if_missing(svc, spreadsheet_id, sheet_name)
+    rng = f"'{sheet_name}'!{first_cell}"
+    values = [list(r) for r in rows]
     try:
-        _execute("GOOGLESHEETS_BATCH_UPDATE", args)
+        svc.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=rng,
+            valueInputOption="USER_ENTERED",
+            body={"values": values},
+        ).execute()
         log.info("growth_sheet.write ok sheet=%s rows=%d", sheet_name, len(rows))
     except Exception as exc:
-        if "not found" in str(exc).lower():
-            _add_sheet_if_missing(spreadsheet_id, sheet_name)
-            try:
-                _execute("GOOGLESHEETS_BATCH_UPDATE", args)
-                log.info("growth_sheet.write ok sheet=%s rows=%d", sheet_name, len(rows))
-                return
-            except Exception as retry_exc:
-                exc = retry_exc
         log.warning("growth_sheet.write err sheet=%s err=%s", sheet_name, exc)
 
 

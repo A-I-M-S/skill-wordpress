@@ -290,6 +290,46 @@ def check_reddit() -> tuple[str, str]:
     return OK, f"Composio Reddit configured; allowed={settings.reddit.allowed_subs}"
 
 
+def check_composio() -> tuple[str, str]:
+    if not settings.composio.enabled:
+        return SKIP, "COMPOSIO_API_KEY / COMPOSIO_USER_ID not set"
+    from openclaw.composio_client import ComposioClient
+
+    configured = {
+        "google_search_console": settings.composio.gsc_account_id,
+        "reddit": settings.composio.reddit_account_id,
+        "google_analytics": settings.composio.google_analytics_account_id,
+        "googlesheets": settings.composio.google_sheets_account_id,
+        "googledrive": settings.composio.google_drive_account_id,
+        "googledocs": settings.composio.google_docs_account_id,
+        "linkedin": settings.composio.linkedin_account_id,
+        "facebook": settings.composio.facebook_account_id,
+        "youtube": settings.composio.youtube_account_id,
+    }
+    items = ComposioClient().connected_accounts()
+    by_id = {item.get("id"): item for item in items}
+    problems = []
+    active = []
+    for toolkit, account_id in configured.items():
+        if not account_id:
+            continue
+        item = by_id.get(account_id)
+        if not item:
+            problems.append(f"{toolkit}:{account_id}=missing")
+            continue
+        status = item.get("status", "?")
+        actual_toolkit = (item.get("toolkit") or {}).get("slug", "?")
+        if status != "ACTIVE":
+            problems.append(f"{toolkit}:{account_id}={status}")
+        elif actual_toolkit != toolkit:
+            problems.append(f"{toolkit}:{account_id}=toolkit:{actual_toolkit}")
+        else:
+            active.append(toolkit)
+    if problems:
+        return FAIL, "active=" + ",".join(active or ["none"]) + " problems=" + "; ".join(problems)
+    return OK, "configured accounts active=" + ",".join(active or ["none"])
+
+
 def check_indexnow() -> tuple[str, str]:
     key = settings.indexnow_key
     host = settings.wp.host
@@ -385,6 +425,7 @@ CHECKS: List[tuple[str, Callable[[], tuple[str, str]]]] = [
     ("bluesky",    check_bluesky),
     ("nostr",      check_nostr),
     ("reddit",     check_reddit),
+    ("composio",   check_composio),
     ("hn",         check_hn),
     ("indexnow",   check_indexnow),
     ("youtube",    check_youtube),

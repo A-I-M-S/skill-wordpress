@@ -1,27 +1,25 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 import requests
 
-from ..composio_client import available as composio_available
-from ..config import settings
 from ..logging_utils import log
-from . import composio_linkedin
 from .base import PostPayload
 
+API = "https://api.linkedin.com/v2/ugcPosts"
 
-def post(payload: PostPayload) -> None:
-    if composio_available() and settings.composio.linkedin_account_id:
-        return composio_linkedin.post(payload)
+
+def _post_native(payload: PostPayload) -> Optional[str]:
     token = os.getenv("LINKEDIN_TOKEN")
-    author = os.getenv("LINKEDIN_AUTHOR")
+    author = os.getenv("LINKEDIN_AUTHOR") or os.getenv("LINKEDIN_AUTHOR_URN")
     if not (token and author):
         log.info("linkedin.skip reason=no_credentials")
-        return
+        return None
     try:
-        requests.post(
-            "https://api.linkedin.com/v2/ugcPosts",
+        resp = requests.post(
+            API,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
@@ -48,6 +46,17 @@ def post(payload: PostPayload) -> None:
             },
             timeout=30,
         )
-        log.info("linkedin.post ok url=%s", payload.url)
+        if resp.status_code >= 400:
+            log.warning("linkedin.post err=status_%s body=%s", resp.status_code, resp.text[:300])
+            return None
+        post_id = resp.headers.get("x-restli-id") or resp.json().get("id")
+        log.info("linkedin.post ok url=%s id=%s", payload.url, post_id)
+        return post_id
     except Exception as exc:
         log.warning("linkedin.post err=%s", exc)
+        return None
+
+
+def post(payload: PostPayload) -> None:
+    # Direct LinkedIn API only (Composio path removed).
+    _post_native(payload)

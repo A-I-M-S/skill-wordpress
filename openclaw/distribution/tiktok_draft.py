@@ -79,7 +79,7 @@ def post_video(payload: PostPayload, mp4_path: Path) -> Optional[str]:
     privacy = os.getenv("TIKTOK_PRIVACY", "SELF_ONLY") if direct else "n/a"
 
     try:
-        video_url = host_video(mp4_path, slug=Path(mp4_path).stem)
+        video_url = host_video(mp4_path)
         if not video_url:
             log.warning("tiktok.skip reason=video_host_failed")
             return None
