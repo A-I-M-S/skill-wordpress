@@ -129,9 +129,17 @@ class LLMClient:
                     timeout=180,
                 )
                 response.raise_for_status()
-                return response.json()["choices"][0]["message"]["content"]
-            except Exception:
-                pass
+                content = response.json()["choices"][0]["message"].get("content") or ""
+                if content.strip():
+                    log.info("llm.complete ok model=%s tokens=%s chars=%d", model, max_tokens or self.max_tokens, len(content))
+                    return content
+                log.warning("llm.complete empty model=%s status=%s", model, response.status_code)
+            except Exception as exc:
+                detail = ""
+                response_obj = locals().get("response")
+                if response_obj is not None:
+                    detail = f" status={response_obj.status_code} body={response_obj.text[:300]!r}"
+                log.warning("llm.complete model=%s err=%s%s", model, exc, detail)
         return ""
 
     def generate_article(self, topic: str) -> GeneratedArticle:

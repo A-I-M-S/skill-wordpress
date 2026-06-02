@@ -181,22 +181,25 @@ def build_outline(llm: LLMClient, keyword: str) -> Outline:
 
 
 def build_draft(llm: LLMClient, outline: Outline) -> str:
-    raw = llm.complete_text(
-        DRAFT_PROMPT.format(outline_json=json.dumps(
-            {
-                "primary_keyword": outline.primary_keyword,
-                "intent": outline.intent,
-                "sections": outline.sections,
-                "faqs": outline.faqs,
-                "original_asset": outline.original_asset,
-                "trust_notes": outline.trust_notes,
-            },
-            indent=2,
-        )),
-        max_tokens=4000,
-    )
+    prompt = DRAFT_PROMPT.format(outline_json=json.dumps(
+        {
+            "primary_keyword": outline.primary_keyword,
+            "intent": outline.intent,
+            "sections": outline.sections,
+            "faqs": outline.faqs,
+            "original_asset": outline.original_asset,
+            "trust_notes": outline.trust_notes,
+        },
+        indent=2,
+    ))
+    raw = ""
+    for attempt in range(2):
+        raw = llm.complete_text(prompt, max_tokens=8000)
+        if raw:
+            break
+        log.warning("article.draft empty attempt=%d", attempt + 1)
     if not raw:
-        raise RuntimeError("LLM draft pass returned empty")
+        raise RuntimeError("LLM draft pass returned empty after retries")
     html = _strip_fences(raw)
     log.info("article.draft ok len=%d", len(html))
     return html
