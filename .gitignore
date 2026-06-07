@@ -13,3 +13,4 @@ logs/
 *.log
 blogger-client-secrets.json
 blogger-token.json
+data/
