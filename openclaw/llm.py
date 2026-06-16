@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -68,6 +69,71 @@ class LLMClient:
         self.primary = settings.llm.primary_model
         self.fallbacks = settings.llm.fallback_models
         self.max_tokens = settings.llm.max_tokens
+        
+        self.dd_api_key = settings.datadog.api_key
+        self.dd_app_key = settings.datadog.app_key
+        self.dd_workflow_id = settings.datadog.workflow_id
+
+    def _call_datadog(self, prompt: str) -> Optional[str]:
+        if not self.dd_api_key or not self.dd_app_key:
+            return None
+            
+        url = f"https://api.ap1.datadoghq.com/api/v2/workflows/{self.dd_workflow_id}/instances"
+        headers = {
+            "Content-Type": "application/json",
+            "DD-API-KEY": self.dd_api_key,
+            "DD-APPLICATION-KEY": self.dd_app_key
+        }
+        payload = {
+            "meta": {
+                "payload": {
+                    "input": prompt
+                }
+            }
+        }
+        
+        try:
+            log.info("llm.datadog starting workflow...")
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            instance_id = response.json()["data"]["id"]
+            log.info("llm.datadog polling instance_id=%s", instance_id)
+            
+            for _ in range(60): # 2 mins timeout
+                time.sleep(2)
+                poll_url = f"https://api.ap1.datadoghq.com/api/v2/workflows/{self.dd_workflow_id}/instances/{instance_id}"
+                poll_res = requests.get(poll_url, headers=headers, timeout=30)
+                poll_res.raise_for_status()
+                poll_data = poll_res.json()
+                
+                status = poll_data.get("data", {}).get("attributes", {}).get("instanceStatus", {}).get("detailsKind")
+                if status == "SUCCEEDED":
+                    # Datadog workflow responses often return their results inside `outputs`
+                    outputs = poll_data.get("data", {}).get("attributes", {}).get("outputs", {})
+                    
+                    # Log the outputs so the user can debug if they are empty
+                    log.info("llm.datadog outputs=%s", json.dumps(outputs))
+                    
+                    # Try to find any non-null output
+                    output_text = ""
+                    for k, v in outputs.items():
+                        if v is not None:
+                            output_text += str(v) + "\n"
+                            
+                    if not output_text.strip():
+                        log.warning("llm.datadog outputs were all null. Check your Datadog workflow output schema!")
+                        return None
+                        
+                    log.info("llm.datadog success chars=%d", len(output_text))
+                    return output_text.strip()
+                elif status in ["FAILED", "CANCELED", "ERROR", "TIMEOUT", "ABORTED"]:
+                    log.warning("llm.datadog failed status=%s", status)
+                    return None
+            log.warning("llm.datadog timeout waiting for instance=%s", instance_id)
+            return None
+        except Exception as exc:
+            log.warning("llm.datadog err=%s", exc)
+            return None
 
     def _call(self, model: str, prompt: str) -> Optional[str]:
         if not self.api_key:
@@ -111,6 +177,12 @@ class LLMClient:
     def complete_text(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """Plain-text completion across the model fallback chain. Returns ''
         if every model fails. Use for cap"""
+        
+        if self.dd_api_key:
+            dd_content = self._call_datadog(prompt)
+            if dd_content and dd_content.strip():
+                return dd_content
+                
         attempts: List[str] = [self.primary, *self.fallbacks]
         for model in attempts:
             payload: Dict[str, Any] = {
@@ -148,6 +220,19 @@ class LLMClient:
             min_words=settings.llm.min_words,
             max_words=settings.llm.min_words + 800,
         )
+        
+        if self.dd_api_key:
+            raw = self._call_datadog(prompt)
+            if raw:
+                try:
+                    data = self._parse_json(raw)
+                    article = GeneratedArticle.from_dict(data)
+                    if article.title and article.content:
+                        log.info("llm.generate ok datadog title=%r", article.title)
+                        return article
+                except Exception as exc:
+                    log.warning("llm.parse datadog err=%s", exc)
+                    
         attempts: List[str] = [self.primary, *self.fallbacks]
         last_err: Optional[Exception] = None
         for model in attempts:

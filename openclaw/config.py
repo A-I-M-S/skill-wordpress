@@ -113,6 +113,14 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class DatadogConfig:
+    api_key: Optional[str] = field(default_factory=lambda: _env("DATADOG_API_KEY"))
+    app_key: Optional[str] = field(default_factory=lambda: _env("DATADOG_APP_KEY"))
+    workflow_id: str = "e9b2e6fb-0205-4915-b887-4ff28bf033fb"
+
+
+
+@dataclass(frozen=True)
 class SeedreamConfig:
     """ByteDance Seedream (Volcano Engine / BytePlus Ark) image generation."""
 
@@ -281,6 +289,7 @@ class Settings:
     composio: ComposioConfig = field(default_factory=ComposioConfig)
     wp: WordPressConfig = field(default_factory=WordPressConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    datadog: DatadogConfig = field(default_factory=DatadogConfig)
     seedream: SeedreamConfig = field(default_factory=SeedreamConfig)
     seedance: SeedanceConfig = field(default_factory=SeedanceConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
